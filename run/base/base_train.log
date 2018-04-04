@@ -1,0 +1,161 @@
+/home/zhaos5/anaconda3/lib/python3.6/site-packages/h5py/__init__.py:36: FutureWarning: Conversion of the second argument of issubdtype from `float` to `np.floating` is deprecated. In future, it will be treated as `np.float64 == np.dtype(float).type`.
+  from ._conv import register_converters as _register_converters
+WARNING:tensorflow:From /home/zhaos5/anaconda3/lib/python3.6/site-packages/tensorflow/contrib/learn/python/learn/datasets/base.py:198: retry (from tensorflow.contrib.learn.python.learn.datasets.base) is deprecated and will be removed in a future version.
+Instructions for updating:
+Use the retry module or similar alternatives.
+WARNING:tensorflow:From /home/zhaos5/projs/wsd/wsd_code/tensor2tensor/layers/common_layers.py:513: calling reduce_mean (from tensorflow.python.ops.math_ops) with keep_dims is deprecated and will be removed in a future version.
+Instructions for updating:
+keep_dims is deprecated, use keepdims instead
+2018-04-04 11:24:29.602146: I tensorflow/core/platform/cpu_feature_guard.cc:140] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2018-04-04 11:25:09.663445: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:898] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2018-04-04 11:25:09.663837: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1344] Found device 0 with properties: 
+name: Tesla K80 major: 3 minor: 7 memoryClockRate(GHz): 0.8235
+pciBusID: 0000:00:0f.0
+totalMemory: 11.17GiB freeMemory: 11.10GiB
+2018-04-04 11:25:09.663862: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1423] Adding visible gpu devices: 0
+2018-04-04 11:25:09.982665: I tensorflow/core/common_runtime/gpu/gpu_device.cc:911] Device interconnect StreamExecutor with strength 1 edge matrix:
+2018-04-04 11:25:09.982729: I tensorflow/core/common_runtime/gpu/gpu_device.cc:917]      0 
+2018-04-04 11:25:09.982740: I tensorflow/core/common_runtime/gpu/gpu_device.cc:930] 0:   N 
+2018-04-04 11:25:09.983112: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1041] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 10764 MB memory) -> physical GPU (device: 0, name: Tesla K80, pci bus id: 0000:00:0f.0, compute capability: 3.7)
+Subword Vocab Populated with size 49588 for path /home/zhaos5/projs/wsd/wsd_code/model/../../wsd_data/medline/subvoc.txt.
+Finished Populate Data with 383351 samples.
+Perplexity:	39.629021 at step 1001 using 0:03:00.426288.
+Perplexity:	13.807487 at step 2002 using 0:02:35.107829.
+Perplexity:	57.428375 at step 3003 using 0:02:38.703437.
+Perplexity:	8.084300 at step 4004 using 0:02:37.832881.
+Perplexity:	21.053341 at step 5005 using 0:02:34.251713.
+Perplexity:	6.027578 at step 6006 using 0:02:34.980653.
+Perplexity:	48.733276 at step 7007 using 0:02:34.669218.
+Perplexity:	62.327122 at step 8008 using 0:02:38.039437.
+Perplexity:	4.524728 at step 9009 using 0:02:34.335904.
+Perplexity:	13.438071 at step 10010 using 0:02:34.347722.
+Perplexity:	8.930070 at step 11011 using 0:02:34.718850.
+Perplexity:	49.271473 at step 12012 using 0:02:37.769274.
+Perplexity:	4.399768 at step 13013 using 0:02:33.836546.
+Perplexity:	16.480083 at step 14014 using 0:02:34.200208.
+Perplexity:	1.467196 at step 15015 using 0:02:34.448052.
+Perplexity:	3.139153 at step 16016 using 0:02:36.993320.
+Perplexity:	27.601019 at step 17017 using 0:02:33.521844.
+Perplexity:	2.113852 at step 18018 using 0:02:34.071386.
+Perplexity:	17.305021 at step 19019 using 0:02:34.174976.
+Perplexity:	3.827503 at step 20020 using 0:02:36.972875.
+Perplexity:	43.993176 at step 21021 using 0:02:33.811522.
+Perplexity:	90.953629 at step 22022 using 0:02:33.716312.
+Perplexity:	3.433972 at step 23023 using 0:02:33.321741.
+Perplexity:	6.891832 at step 24024 using 0:02:36.507363.
+Perplexity:	4.955161 at step 25025 using 0:02:33.769739.
+Perplexity:	6.500907 at step 26026 using 0:02:33.059481.
+Perplexity:	18.574186 at step 27027 using 0:02:33.423555.
+Perplexity:	2.480412 at step 28028 using 0:02:36.416213.
+Perplexity:	7.205285 at step 29029 using 0:02:36.187335.
+Perplexity:	3.648624 at step 30030 using 0:02:33.553336.
+Perplexity:	24.152271 at step 31031 using 0:02:36.657578.
+Perplexity:	3.827043 at step 32032 using 0:02:32.990797.
+Perplexity:	7.087191 at step 33033 using 0:02:32.933799.
+Perplexity:	45.816669 at step 34034 using 0:02:33.534052.
+Perplexity:	17.686131 at step 35035 using 0:02:36.072156.
+Perplexity:	5.044945 at step 36036 using 0:02:33.468615.
+Perplexity:	89.000771 at step 37037 using 0:02:33.118099.
+Perplexity:	5.731000 at step 38038 using 0:02:33.109542.
+Perplexity:	1.559153 at step 39039 using 0:02:36.147826.
+Perplexity:	2.688730 at step 40040 using 0:02:32.903197.
+Perplexity:	13.089305 at step 41041 using 0:02:33.351498.
+Perplexity:	1.309927 at step 42042 using 0:02:33.152028.
+Perplexity:	1.872116 at step 43043 using 0:02:36.055052.
+Perplexity:	9.640250 at step 44044 using 0:02:33.215176.
+Perplexity:	20.266922 at step 45045 using 0:02:33.175194.
+Perplexity:	3.922402 at step 46046 using 0:02:33.189514.
+Perplexity:	3.550508 at step 47047 using 0:02:35.900077.
+Perplexity:	3.983809 at step 48048 using 0:02:33.206750.
+Perplexity:	3.601297 at step 49049 using 0:02:33.030360.
+Perplexity:	7.519128 at step 50050 using 0:02:33.142927.
+Perplexity:	2.903089 at step 51051 using 0:02:36.457442.
+Perplexity:	19.862125 at step 52052 using 0:02:33.077351.
+Perplexity:	37.532024 at step 53053 using 0:02:33.663503.
+Perplexity:	9.549115 at step 54054 using 0:02:33.322267.
+Perplexity:	4.009185 at step 55055 using 0:02:39.220713.
+Perplexity:	62.622791 at step 56056 using 0:02:33.073397.
+Perplexity:	4.862175 at step 57057 using 0:02:32.942922.
+Perplexity:	3.758487 at step 58058 using 0:02:33.104683.
+Perplexity:	1.313569 at step 59059 using 0:02:36.148971.
+Perplexity:	84.293938 at step 60060 using 0:02:33.309449.
+Perplexity:	4.776157 at step 61061 using 0:02:32.878747.
+Perplexity:	2.069580 at step 62062 using 0:02:33.089600.
+Perplexity:	5.825766 at step 63063 using 0:02:36.462007.
+Perplexity:	57.485390 at step 64064 using 0:02:32.956762.
+Perplexity:	1.336624 at step 65065 using 0:02:32.501352.
+Perplexity:	2.762042 at step 66066 using 0:02:32.955909.
+Perplexity:	1.474286 at step 67067 using 0:02:35.953414.
+Perplexity:	6.384178 at step 68068 using 0:02:33.242181.
+Perplexity:	28.240149 at step 69069 using 0:02:32.916463.
+Perplexity:	4.894662 at step 70070 using 0:02:36.413048.
+Perplexity:	20.914993 at step 71071 using 0:02:33.118584.
+Perplexity:	3.127961 at step 72072 using 0:02:33.457330.
+Perplexity:	5.238018 at step 73073 using 0:02:33.348886.
+Perplexity:	4.489991 at step 74074 using 0:02:36.341263.
+Perplexity:	6.354778 at step 75075 using 0:02:33.512545.
+Perplexity:	9.093877 at step 76076 using 0:02:33.271215.
+Perplexity:	1.737735 at step 77077 using 0:02:33.457313.
+Perplexity:	4.245053 at step 78078 using 0:02:36.437420.
+Perplexity:	3.905403 at step 79079 using 0:02:32.658261.
+Perplexity:	3.408210 at step 80080 using 0:02:33.233881.
+Perplexity:	1.863612 at step 81081 using 0:02:32.929091.
+Perplexity:	5.037775 at step 82082 using 0:02:39.214840.
+Perplexity:	5.485652 at step 83083 using 0:02:33.126957.
+Perplexity:	11.191379 at step 84084 using 0:02:33.086916.
+Perplexity:	4.203876 at step 85085 using 0:02:33.486492.
+Perplexity:	2.704772 at step 86086 using 0:02:36.217782.
+Perplexity:	3.027749 at step 87087 using 0:02:32.978314.
+Perplexity:	1.375572 at step 88088 using 0:02:33.366642.
+Perplexity:	2.207464 at step 89089 using 0:02:32.911503.
+Perplexity:	18.153399 at step 90090 using 0:02:36.359211.
+Perplexity:	3.059608 at step 91091 using 0:02:33.349276.
+Perplexity:	4.287367 at step 92092 using 0:02:32.663586.
+Perplexity:	7.069285 at step 93093 using 0:02:33.483346.
+Perplexity:	14.278693 at step 94094 using 0:02:35.698759.
+Perplexity:	3.209128 at step 95095 using 0:02:32.947146.
+Perplexity:	5.125870 at step 96096 using 0:02:32.958511.
+Perplexity:	2.436777 at step 97097 using 0:02:32.636871.
+Perplexity:	1.827620 at step 98098 using 0:02:36.746813.
+Perplexity:	23.724583 at step 99099 using 0:02:33.364224.
+Perplexity:	1.850957 at step 100100 using 0:02:33.062903.
+Perplexity:	2.627051 at step 101101 using 0:02:33.666382.
+Perplexity:	5.659788 at step 102102 using 0:02:36.281715.
+Perplexity:	2.440866 at step 103103 using 0:02:33.313805.
+Perplexity:	1.940367 at step 104104 using 0:02:33.060941.
+Perplexity:	6.305195 at step 105105 using 0:02:33.256630.
+Perplexity:	2.849121 at step 106106 using 0:02:36.198843.
+Perplexity:	7.372391 at step 107107 using 0:02:36.275442.
+Perplexity:	4.570653 at step 108108 using 0:02:33.625420.
+Perplexity:	8.665360 at step 109109 using 0:02:36.104391.
+Perplexity:	13.561743 at step 110110 using 0:02:32.776183.
+Perplexity:	59.365856 at step 111111 using 0:02:33.269607.
+Perplexity:	1.526958 at step 112112 using 0:02:33.264424.
+Perplexity:	52.046833 at step 113113 using 0:02:35.466224.
+Perplexity:	19.186056 at step 114114 using 0:02:33.352948.
+Perplexity:	13.792208 at step 115115 using 0:02:32.924481.
+Perplexity:	40.955379 at step 116116 using 0:02:32.984724.
+Perplexity:	10.310379 at step 117117 using 0:02:36.205861.
+Perplexity:	1.573769 at step 118118 using 0:02:33.461665.
+Perplexity:	1.400628 at step 119119 using 0:02:33.025183.
+Perplexity:	6.047846 at step 120120 using 0:02:32.899020.
+Perplexity:	7.622040 at step 121121 using 0:02:36.247426.
+Perplexity:	5.921985 at step 122122 using 0:02:33.244361.
+Perplexity:	2.168704 at step 123123 using 0:02:33.167299.
+Perplexity:	5.074608 at step 124124 using 0:02:33.395235.
+Perplexity:	9.363467 at step 125125 using 0:02:36.406572.
+Perplexity:	18.992386 at step 126126 using 0:02:33.564905.
+Perplexity:	2.028163 at step 127127 using 0:02:33.201382.
+Perplexity:	11.342023 at step 128128 using 0:02:33.274464.
+Perplexity:	3.321077 at step 129129 using 0:02:35.912859.
+Perplexity:	7.129170 at step 130130 using 0:02:33.013676.
+Perplexity:	23.949739 at step 131131 using 0:02:32.708044.
+Perplexity:	9.600721 at step 132132 using 0:02:33.303824.
+Perplexity:	9.417150 at step 133133 using 0:02:39.110857.
+Perplexity:	2.273695 at step 134134 using 0:02:32.894935.
+Perplexity:	3.447380 at step 135135 using 0:02:32.818922.
+Perplexity:	6.411885 at step 136136 using 0:02:33.238722.
+Perplexity:	7.595976 at step 137137 using 0:02:36.306256.
+Perplexity:	3.376800 at step 138138 using 0:02:32.909272.
+Perplexity:	15.006966 at step 139139 using 0:02:33.134945.
+Perplexity:	6.717234 at step 140140 using 0:02:33.165443.
