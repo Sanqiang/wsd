@@ -62,7 +62,7 @@ def eval(model_config, ckpt):
                 abbr_id = gt_target[i][1]
 
                 report.append('Abbr:%s\tPred:%s\tGt:%s\t' %
-                              (data.id2abbr[abbr_id], data.id2sense[gt_target[i][-1]], data.id2sense[pred[i]]))
+                              (data.id2abbr[abbr_id], data.id2sense[pred[i]], data.id2sense[gt_target[i][-1]]))
             report.append('')
 
         if exclude_cnt > 0:
