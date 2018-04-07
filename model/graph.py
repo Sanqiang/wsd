@@ -73,6 +73,10 @@ class Graph:
                                                  1.0 - self.hparams.layer_prepostprocess_dropout)
             encoder_outputs = transformer.transformer_encoder(
                 contexts_emb, contexts_emb_bias, self.hparams)
+            if 'padmask' in self.model_config.enc_postprocess:
+                mask = tf.expand_dims(tf.to_float(tf.not_equal(tf.stack(contexts, axis=1),
+                                     self.data.voc.encode(constant.PAD))), axis=-1)
+                encoder_outputs *= mask
 
             if self.model_config.aggregate_mode == 'selfattn':
                 selfattn_w = tf.get_variable(
@@ -85,7 +89,12 @@ class Graph:
                 encoder_outputs *= weight
                 aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
             else:
-                aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
+                if 'padmask' in self.model_config.enc_postprocess:
+                    aggregate_state = tf.reduce_all(encoder_outputs, axis=1)
+                    norm = tf.reduce_sum(encoder_outputs, axis=-1)
+                    aggregate_state /= norm
+                else:
+                    aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
 
         with tf.variable_scope('pred'):
             proj_w = tf.get_variable('proj_w', [self.model_config.dimension, self.data.sen_cnt], tf.float32,
@@ -109,7 +118,7 @@ class Graph:
                 loss *= loss_mask
 
                 losses.append(loss)
-                preds.append(tf.argmax(logits, axis=-1))
+                preds.append(tf.nn.top_k(logits, k=5, sorted=True)[1])
 
         preds = tf.stack(preds, axis=1)
         obj = {

@@ -634,6 +634,79 @@ def transformer_prepare_decoder(targets, hparams, features=None):
   return (decoder_input, decoder_self_attention_bias)
 
 
+def transformer_encoder_pyramid(encoder_input,
+                        encoder_self_attention_bias,
+                        hparams,
+                        name="encoder",
+                        nonpadding=None,
+                        save_weights_to=None,
+                        make_image_summary=True):
+  """A stack of transformer layers.
+
+  Args:
+    encoder_input: a Tensor
+    encoder_self_attention_bias: bias Tensor for self-attention
+       (see common_attention.attention_bias())
+    hparams: hyperparameters for model
+    name: a string
+    nonpadding: optional Tensor with shape [batch_size, encoder_length]
+      indicating what positions are not padding.  This must either be
+      passed in, which we do for "packed" datasets, or inferred from
+      encoder_self_attention_bias.  The knowledge about padding is used
+      for pad_remover(efficiency) and to mask out padding in convoltutional
+      layers.
+    save_weights_to: an optional dictionary to capture attention weights
+      for vizualization; the weights tensor will be appended there under
+      a string key created from the variable scope (including name).
+    make_image_summary: Whether to make an attention image summary.
+
+  Returns:
+    y: a Tensors
+  """
+  x = encoder_input
+  attention_dropout_broadcast_dims = (
+      common_layers.comma_separated_string_to_integer_list(
+          getattr(hparams, "attention_dropout_broadcast_dims", "")))
+  with tf.variable_scope(name):
+    if nonpadding is not None:
+      padding = 1.0 - nonpadding
+    else:
+      padding = common_attention.attention_bias_to_padding(
+          encoder_self_attention_bias)
+      nonpadding = 1.0 - padding
+    pad_remover = None
+    if hparams.use_pad_remover and not common_layers.is_on_tpu():
+      pad_remover = expert_utils.PadRemover(padding)
+    for layer in xrange(hparams.num_encoder_layers or
+                        hparams.num_hidden_layers):
+      with tf.variable_scope("layer_%d" % layer):
+        with tf.variable_scope("self_attention"):
+          y = common_attention.multihead_attention(
+              common_layers.layer_preprocess(x, hparams),
+              None,
+              encoder_self_attention_bias,
+              hparams.attention_key_channels or hparams.hidden_size,
+              hparams.attention_value_channels or hparams.hidden_size,
+              hparams.hidden_size,
+              hparams.num_heads,
+              hparams.attention_dropout,
+              attention_type=hparams.self_attention_type,
+              save_weights_to=save_weights_to,
+              max_relative_position=hparams.max_relative_position,
+              make_image_summary=make_image_summary,
+              dropout_broadcast_dims=attention_dropout_broadcast_dims)
+          x = common_layers.layer_postprocess(x, y, hparams)
+        with tf.variable_scope("ffn"):
+          y = transformer_ffn_layer(
+              common_layers.layer_preprocess(x, hparams), hparams, pad_remover,
+              conv_padding="SAME", nonpadding_mask=nonpadding)
+          x = common_layers.layer_postprocess(x, y, hparams)
+    # if normalization is done in layer_preprocess, then it shuold also be done
+    # on the output, since the output can grow very large, being the sum of
+    # a whole stack of unnormalized layer outputs.
+    return common_layers.layer_preprocess(x, hparams)
+
+
 def transformer_encoder(encoder_input,
                         encoder_self_attention_bias,
                         hparams,

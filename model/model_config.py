@@ -48,6 +48,8 @@ def get_args():
     # For Transformer
     parser.add_argument('-pos', '--hparams_pos', default='timing',
                         help='Whether to use positional encoding?')
+    parser.add_argument('-cprocess', '--enc_postprocess', default='',
+                        help='Postprocess of the encoder?')
     parser.add_argument('-nhl', '--num_hidden_layers', default=2, type=int,
                         help='Number of hidden layer?')
     parser.add_argument('-nel', '--num_encoder_layers', default=2, type=int,
@@ -112,9 +114,10 @@ class DummyConfig():
     num_encoder_layers = args.num_encoder_layers
     num_decoder_layers = args.num_decoder_layers
     hparams_pos = args.hparams_pos
+    enc_postprocess = args.enc_postprocess.split(':')
     dimension = args.dimension
     layer_prepostprocess_dropout = args.layer_prepostprocess_dropout
-    save_model_secs = 60
+    save_model_secs = 600
     model_print_freq = args.model_print_freq
 
     learning_rate = args.learning_rate

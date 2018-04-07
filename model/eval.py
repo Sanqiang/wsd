@@ -32,7 +32,7 @@ def eval(model_config, ckpt):
 
     perplexitys = []
     total_cnt = 0.0
-    correct_cnt = 0.0
+    correct_cnt, correct_cnt2, correct_cnt3, correct_cnt4, correct_cnt5 = 0.0, 0.0, 0.0, 0.0, 0.0
     report = []
     line_id = 1
     start_time = datetime.now()
@@ -55,24 +55,39 @@ def eval(model_config, ckpt):
                 if gt_target[i][2] == 0:
                    continue
 
-                if pred[i] == gt_target[i][-1]:
+                if gt_target[i][-1] == pred[i][0:1] :
                     correct_cnt += 1
+                if gt_target[i][-1] in pred[i][0:2]:
+                    correct_cnt2 += 1
+                if gt_target[i][-1] in pred[i][0:3]:
+                    correct_cnt3 += 1
+                if gt_target[i][-1] in pred[i][0:4]:
+                    correct_cnt4 += 1
+                if gt_target[i][-1] in pred[i][0:5]:
+                    correct_cnt5 += 1
                 total_cnt += 1
 
                 abbr_id = gt_target[i][1]
 
                 report.append('Abbr:%s\tPred:%s\tGt:%s\t' %
-                              (data.id2abbr[abbr_id], data.id2sense[pred[i]], data.id2sense[gt_target[i][-1]]))
+                              (data.id2abbr[abbr_id],
+                               ';'.join([data.id2sense[loop] for loop in pred[i]]),
+                               data.id2sense[gt_target[i][-1]]))
             report.append('')
 
         if exclude_cnt > 0:
             break
 
     end_time = datetime.now()
-    acc = correct_cnt / total_cnt
+    fmt = "%.5f"
+    acc = fmt % (correct_cnt / total_cnt)
+    acc2 = fmt % (correct_cnt2 / total_cnt)
+    acc3 = fmt % (correct_cnt3 / total_cnt)
+    acc4 = fmt % (correct_cnt4 / total_cnt)
+    acc5 = fmt % (correct_cnt5 / total_cnt)
     perplexity = np.mean(perplexity)
     report = '\n'.join(report)
-    filename = 'step%s_acc%s_pp%s.txt' % (step, acc, perplexity)
+    filename = 'step%s_acc%s_acc2%s_acc3%s_acc4%s_acc5%s_pp%s.txt' % (step, acc, acc2, acc3, acc4, acc5, perplexity)
     span = end_time - start_time
 
     if not exists(model_config.resultdir):
