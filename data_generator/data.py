@@ -57,7 +57,11 @@ class Data:
                     if abbr in self.abbrs_filterout:
                         continue
                     sense = pair[2]
-                    wid = self.voc.encode(NONTAR)
+
+                    if 'add_abbr' in self.model_config.voc_process:
+                        wid = self.voc.encode(abbr)
+                    else:
+                        wid = self.voc.encode(NONTAR)
                     if abbr not in self.abbrs_pos:
                         if abbr not in self.abbr2id:
                             continue

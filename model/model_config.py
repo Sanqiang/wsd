@@ -36,6 +36,8 @@ def get_args():
                         help='The frequency of evaluation at training? not use if = 0.')
     parser.add_argument('-max_context_len', '--max_context_len', default=300, type=int,
                         help='Max of context length?')
+    parser.add_argument('-vprocess', '--voc_process', default='',
+                        help='Preprocess of vocab?')
 
     # For Graph
     parser.add_argument('-dim', '--dimension', default=16, type=int,
@@ -96,8 +98,6 @@ args = get_args()
 class DummyConfig():
     mode = args.mode
 
-    voc_file = get_path('../wsd_data/medline/subvoc.txt')
-
     train_file = get_path('../wsd_data/dummy/train.txt')
     eval_file = get_path('../wsd_data/dummy/eval.txt')
 
@@ -115,6 +115,13 @@ class DummyConfig():
     num_decoder_layers = args.num_decoder_layers
     hparams_pos = args.hparams_pos
     enc_postprocess = args.enc_postprocess.split(':')
+    voc_process = args.voc_process.split(':')
+
+    if 'add_abbr' in voc_process:
+        voc_file = get_path('../wsd_data/medline/subvoc_abbr.txt')
+    else:
+        voc_file = get_path('../wsd_data/medline/subvoc.txt')
+
     dimension = args.dimension
     layer_prepostprocess_dropout = args.layer_prepostprocess_dropout
     save_model_secs = 600

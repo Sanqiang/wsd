@@ -10,8 +10,10 @@ def is_number(word):
 
 
 nlines = []
-for line in open('/Users/zhaosanqiang916/git/wsd_data/zhimeng/medline_procs.txt'):
+for line in open('/Users/zhaosanqiang916/git/wsd_data/zhimeng/medline_procs_new.txt'):
     line = line.strip()
+    if len(line) == 0:
+        continue
     nline = []
     words = line.split()
     for word in words:
@@ -25,7 +27,7 @@ for line in open('/Users/zhaosanqiang916/git/wsd_data/zhimeng/medline_procs.txt'
         nline.append(word)
     nlines.append(' '.join(nline))
 
-f = open('/Users/zhaosanqiang916/git/wsd_data/zhimeng/medline_procs.processed.txt', 'w')
+f = open('/Users/zhaosanqiang916/git/wsd_data/zhimeng/medline_procs_new.processed.txt', 'w')
 f.write('\n'.join(nlines))
 f.close()
 

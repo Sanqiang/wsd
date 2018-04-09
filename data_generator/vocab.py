@@ -14,6 +14,7 @@ class Vocab:
         if vocab_path is not None:
             self.populate_subword_vocab()
 
+
     def populate_subword_vocab(self):
         self.subword = SubwordTextEncoder(self.vocab_path)
         print('Subword Vocab Populated with size %d for path %s.'
@@ -37,7 +38,6 @@ class Vocab:
             reserved_vocab = 'REVERED_%i' % i
             self.w2i[reserved_vocab] = i
             self.i2w.append(reserved_vocab)
-
 
     def populate_vocab(self, mincount=-1):
         mincount = max(mincount, self.model_config.min_count)
