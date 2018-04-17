@@ -38,6 +38,8 @@ def get_args():
                         help='Max of context length?')
     parser.add_argument('-vprocess', '--voc_process', default='',
                         help='Preprocess of vocab?')
+    parser.add_argument('-it', '--it_train', default=False, type=bool,
+                        help='Iteractive Processing Data?')
 
     # For Graph
     parser.add_argument('-dim', '--dimension', default=16, type=int,
@@ -116,6 +118,7 @@ class DummyConfig():
     hparams_pos = args.hparams_pos
     enc_postprocess = args.enc_postprocess.split(':')
     voc_process = args.voc_process.split(':')
+    it_train = args.it_train
 
     if 'add_abbr' in voc_process:
         voc_file = get_path('../wsd_data/medline/subvoc_abbr.txt')
@@ -124,7 +127,7 @@ class DummyConfig():
 
     dimension = args.dimension
     layer_prepostprocess_dropout = args.layer_prepostprocess_dropout
-    save_model_secs = 600
+    save_model_secs = 30
     model_print_freq = args.model_print_freq
 
     learning_rate = args.learning_rate

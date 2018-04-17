@@ -18,7 +18,10 @@ def get_feed(objs, data, model_config, is_train):
         cnt = 0
         while cnt < model_config.batch_size:
             if is_train:
-                sample = data.get_sample()
+                if model_config.it_train:
+                    sample = next(data.data_it)
+                else:
+                    sample = data.get_sample()
             else:
                 sample = data.get_sample()
                 if sample is None:
@@ -61,32 +64,47 @@ def get_session_config():
     config.gpu_options.allow_growth = True
     return config
 
+
+def list_config(config):
+    attrs = [attr for attr in dir(config)
+               if not callable(getattr(config, attr)) and not attr.startswith("__")]
+    output = ''
+    for attr in attrs:
+        val = getattr(config, attr)
+        output = '\n'.join([output, '%s=\t%s' % (attr, val)])
+    return output
+
+
 def train(model_config):
+    print(list_config(model_config))
     data = TrainData(model_config)
     graph = Graph(True, model_config, data)
     graph.create_model_multigpu()
-    sess = tf.train.MonitoredTrainingSession(
+    with tf.train.MonitoredTrainingSession(
         checkpoint_dir=model_config.logdir,
         save_checkpoint_secs=model_config.save_model_secs,
         config=get_session_config()
-    )
-    perplexitys = []
-    start_time = datetime.now()
-    previous_step = 0
-    while True:
-        input_feed, _, _ = get_feed(graph.objs, data, model_config, True)
-        fetches = [graph.train_op, graph.increment_global_step, graph.loss, graph.global_step,
-                   graph.perplexity]
-        _, _, loss, step, perplexity = sess.run(fetches, input_feed)
-        perplexitys.append(perplexity)
+    ) as sess:
+        ckpt = tf.train.get_checkpoint_state(model_config.logdir)
+        if ckpt:
+            graph.saver.restore(sess, ckpt.model_checkpoint_path)
+        perplexitys = []
+        start_time = datetime.now()
+        previous_step = 0
+        while True:
+            input_feed, _, _ = get_feed(graph.objs, data, model_config, True)
+            fetches = [graph.train_op, graph.increment_global_step, graph.loss, graph.global_step,
+                       graph.perplexity]
+            _, _, loss, step, perplexity = sess.run(fetches, input_feed)
+            perplexitys.append(perplexity)
 
-        if (step - previous_step) > model_config.model_print_freq:
-            end_time = datetime.now()
-            time_span = end_time - start_time
-            start_time = end_time
-            print('Perplexity:\t%f at step %d using %s.' % (perplexity, step, time_span))
-            perplexitys.clear()
-            previous_step = step
+            if (step - previous_step) > model_config.model_print_freq:
+                end_time = datetime.now()
+                time_span = end_time - start_time
+                start_time = end_time
+                print('Perplexity:\t%f at step %d using %s.' % (perplexity, step, time_span))
+                perplexitys.clear()
+                previous_step = step
 
 
 if __name__ == '__main__':

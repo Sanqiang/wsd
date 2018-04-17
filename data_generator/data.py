@@ -42,69 +42,100 @@ class Data:
         for line in open(self.model_config.abbr_rare_file):
             self.abbrs_filterout.add(line.strip())
 
+    def process_line(self, line):
+        checker = set()
+        contexts = []
+        targets = []
+        words = line.split()
+        contexts.extend(self.voc.encode(BOS))
+        for id, word in enumerate(words):
+            if word.startswith('abbr|'):
+                pair = word.split('|')
+                abbr = pair[1]
+                if abbr in self.abbrs_filterout:
+                    continue
+                sense = pair[2]
+
+                if 'add_abbr' in self.model_config.voc_process:
+                    wid = self.voc.encode(abbr)
+                else:
+                    wid = self.voc.encode(NONTAR)
+                if abbr not in self.abbrs_pos:
+                    if abbr not in self.abbr2id:
+                        continue
+                    abbr_id = self.abbr2id[abbr]
+                    if abbr_id not in checker and len(targets) < self.model_config.max_abbrs:
+                        if abbr + '|' + sense in self.sense2id:
+                            sense_id = self.sense2id[abbr + '|' + sense]
+                            targets.append([id, abbr_id, sense_id])
+                            checker.add(abbr_id)
+            else:
+                wid = self.voc.encode(word)
+            contexts.extend(wid)
+        contexts.extend(self.voc.encode(EOS))
+
+        if len(contexts) > self.model_config.max_context_len:
+            contexts = contexts[:self.model_config.max_context_len]
+        else:
+            num_pad = self.model_config.max_context_len - len(contexts)
+            contexts.extend(self.voc.encode(PAD) * num_pad)
+        assert len(contexts) == self.model_config.max_context_len
+
+        if len(targets) > self.model_config.max_abbrs:
+            targets = targets[:self.model_config.max_abbrs]
+        else:
+            num_pad = self.model_config.max_abbrs - len(targets)
+            targets.extend([[0, 0, 0]] * num_pad)
+        assert len(targets) == self.model_config.max_abbrs
+
+        obj = {
+                'contexts': contexts,
+                'targets': targets
+        }
+        return obj
+
     def populate_data(self, path):
         self.datas = []
         for line in open(path):
-            checker = set()
-            contexts = []
-            targets = []
-            words = line.split()
-            contexts.extend(self.voc.encode(BOS))
-            for id, word in enumerate(words):
-                if word.startswith('abbr|'):
-                    pair = word.split('|')
-                    abbr = pair[1]
-                    if abbr in self.abbrs_filterout:
-                        continue
-                    sense = pair[2]
-
-                    if 'add_abbr' in self.model_config.voc_process:
-                        wid = self.voc.encode(abbr)
-                    else:
-                        wid = self.voc.encode(NONTAR)
-                    if abbr not in self.abbrs_pos:
-                        if abbr not in self.abbr2id:
-                            continue
-                        abbr_id = self.abbr2id[abbr]
-                        if abbr_id not in checker and len(targets) < self.model_config.max_abbrs:
-                            if abbr + '|' + sense in self.sense2id:
-                                sense_id = self.sense2id[abbr + '|' + sense]
-                                targets.append([id, abbr_id, sense_id])
-                                checker.add(abbr_id)
-                else:
-                    wid = self.voc.encode(word)
-                contexts.extend(wid)
-            contexts.extend(self.voc.encode(EOS))
-
-            if len(contexts) > self.model_config.max_context_len:
-                contexts = contexts[:self.model_config.max_context_len]
-            else:
-                num_pad = self.model_config.max_context_len - len(contexts)
-                contexts.extend(self.voc.encode(PAD) * num_pad)
-            assert len(contexts) == self.model_config.max_context_len
-
-            if len(targets) > self.model_config.max_abbrs:
-                targets = targets[:self.model_config.max_abbrs]
-            else:
-                num_pad = self.model_config.max_abbrs - len(targets)
-                targets.extend([[0,0,0]] * num_pad)
-            assert len(targets) == self.model_config.max_abbrs
-
-            self.datas.append({
-                'contexts': contexts,
-                'targets': targets
-            })
+            obj = self.process_line(line)
+            self.datas.append(obj)
             #break
             
 class TrainData(Data):
     def __init__(self, model_config):
         Data.__init__(self, model_config)
-        self.populate_data(self.model_config.train_file)
-        print('Finished Populate Data with %s samples.' % str(len(self.datas)))
+        if not model_config.it_train:
+            self.populate_data(self.model_config.train_file)
+            print('Finished Populate Data with %s samples.' % str(len(self.datas)))
+        else:
+            self.data_it = self.get_sample_it()
+            self.size = self.get_size()
+            print('Finished Data Iter with %s samples.' % str(self.size))
+
+
+    def get_size(self):
+        return len(open(self.model_config.train_file, encoding='utf-8').readlines())
 
     def get_sample(self):
         i = rd.sample(range(len(self.datas)), 1)[0]
         return self.datas[i]
+
+    def get_sample_it(self):
+        i = 0
+        f = open(self.model_config.train_file)
+        while True:
+            if i >= self.size:
+                i = 0
+                f = open(self.model_config.train_file)
+
+            line = f.readline()
+            if rd.random() < 0.5 or i >= self.size:
+                i += 1
+                continue
+
+            obj = self.process_line(line)
+            yield obj
+            i += 1
 
 
 class EvalData(Data):
