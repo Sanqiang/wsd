@@ -13,37 +13,43 @@ class Graph:
         self.setup_hparams()
 
     def create_model_multigpu(self):
-        losses = []
-        grads = []
-        optim = self.get_optim()
-        self.objs = []
+        # with tf.device('/cpu:0'):
+            losses = []
+            grads = []
+            optim = self.get_optim()
+            self.objs = []
 
-        self.global_step = tf.get_variable(
-            'global_step', initializer=tf.constant(0, dtype=tf.int64), trainable=False)
+            with tf.device('/cpu:0'):
+                self.global_step = tf.train.get_or_create_global_step()
+                self.embs = tf.get_variable(
+                    'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
+                    initializer=tf.contrib.layers.xavier_initializer())
 
-        with tf.variable_scope(tf.get_variable_scope()) as scope:
-            for gpu_id in range(self.model_config.num_gpus):
-                with tf.device('/gpu:%d' % gpu_id):
-                    loss, obj = self.create_model()
-                    grad = optim.compute_gradients(loss)
-                    losses.append(loss)
-                    grads.append(grad)
-                    self.objs.append(obj)
-                    tf.get_variable_scope().reuse_variables()
+            with tf.variable_scope(tf.get_variable_scope()):
+                for gpu_id in range(self.model_config.num_gpus):
+                    with tf.device('/device:GPU:%d' % gpu_id):
+                        with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
+                            loss, obj = self.create_model()
+                            grad = optim.compute_gradients(loss)
+                            tf.get_variable_scope().reuse_variables()
+                            losses.append(loss)
+                            grads.append(grad)
+                            self.objs.append(obj)
 
-        with tf.variable_scope('optimization'):
-            self.loss = tf.divide(tf.add_n(losses), self.model_config.num_gpus)
-            self.perplexity = tf.exp(tf.reduce_mean(self.loss))
+            with tf.variable_scope('optimization'):
+                self.loss = tf.divide(tf.add_n(losses), self.model_config.num_gpus)
+                self.perplexity = tf.exp(tf.reduce_mean(self.loss))
 
-            if self.is_train:
-                avg_grad = self.average_gradients(grads)
-                grads = [g for (g, v) in avg_grad]
-                clipped_grads, _ = tf.clip_by_global_norm(grads, 4.0)
-                self.train_op = optim.apply_gradients(zip(clipped_grads, tf.trainable_variables()),
-                                                      global_step=self.global_step)
-                self.increment_global_step = tf.assign_add(self.global_step, self.model_config.batch_size * self.model_config.num_gpus)
+                if self.is_train:
+                    avg_grad = self.average_gradients(grads)
+                    grads = [g for (g, v) in avg_grad]
+                    clipped_grads, _ = tf.clip_by_global_norm(grads, 4.0)
+                    self.train_op = optim.apply_gradients(zip(clipped_grads, tf.trainable_variables()),
+                                                          global_step=self.global_step)
+                    self.increment_global_step = tf.assign_add(self.global_step,
+                                                               self.model_config.batch_size * self.model_config.num_gpus)
 
-            self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
+                self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
     def create_model(self):
         with tf.variable_scope('variables'):
@@ -60,12 +66,8 @@ class Graph:
 
             num_abbr = tf.zeros([self.model_config.batch_size], tf.float32, name='num_abbr')
 
-            embs = tf.get_variable(
-                'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
-                initializer=tf.contrib.layers.xavier_initializer())
-
         with tf.variable_scope('model'):
-            contexts_emb = tf.stack(self.embedding_fn(contexts, embs), axis=1)
+            contexts_emb = tf.stack(self.embedding_fn(contexts, self.embs), axis=1)
             contexts_emb_bias = common_attention.attention_bias_ignore_padding(
                 tf.to_float(tf.equal(tf.stack(contexts, axis=1),
                                      self.data.voc.encode(constant.PAD))))

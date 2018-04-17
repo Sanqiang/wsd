@@ -3,6 +3,7 @@ from model.graph import Graph
 
 import tensorflow as tf
 from datetime import datetime
+import time
 
 from model.model_config import get_args
 
@@ -61,7 +62,9 @@ def get_feed(objs, data, model_config, is_train):
 
 def get_session_config():
     config = tf.ConfigProto(allow_soft_placement=True)
-    config.gpu_options.allow_growth = True
+    # config.log_device_placement = True
+    config.gpu_options.allocator_type = "BFC"
+    # config.gpu_options.allow_growth = True
     return config
 
 
@@ -83,8 +86,10 @@ def train(model_config):
     with tf.train.MonitoredTrainingSession(
         checkpoint_dir=model_config.logdir,
         save_checkpoint_secs=model_config.save_model_secs,
-        config=get_session_config()
+        config=get_session_config(),
     ) as sess:
+    # with tf.Session(config=get_session_config()) as sess:
+    #     sess.run(tf.initialize_all_variables())
         ckpt = tf.train.get_checkpoint_state(model_config.logdir)
         if ckpt:
             graph.saver.restore(sess, ckpt.model_checkpoint_path)
@@ -93,9 +98,9 @@ def train(model_config):
         previous_step = 0
         while True:
             input_feed, _, _ = get_feed(graph.objs, data, model_config, True)
-            fetches = [graph.train_op, graph.increment_global_step, graph.loss, graph.global_step,
+            fetches = [graph.train_op, graph.increment_global_step, graph.global_step,
                        graph.perplexity]
-            _, _, loss, step, perplexity = sess.run(fetches, input_feed)
+            _, _, step, perplexity = sess.run(fetches, input_feed)
             perplexitys.append(perplexity)
 
             if (step - previous_step) > model_config.model_print_freq:
