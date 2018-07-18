@@ -8,9 +8,9 @@ def get_args():
                         help='Mode?')
     parser.add_argument('-ngpus', '--num_gpus', default=1, type=int,
                         help='Number of GPU cards?')
-    parser.add_argument('-bsize', '--batch_size', default=3, type=int,
+    parser.add_argument('-bsize', '--batch_size', default=2, type=int,
                         help='Size of Mini-Batch?')
-    parser.add_argument('-env', '--environment', default='crc',
+    parser.add_argument('-env', '--environment', default='sys',
                         help='The environment machine?')
     parser.add_argument('-out', '--output_folder', default='tmp',
                         help='Output folder?')
@@ -19,9 +19,9 @@ def get_args():
     parser.add_argument('-warm', '--warm_start', default='',
                         help='Path for warm start checkpoint?')
 
-    parser.add_argument('-op', '--optimizer', default='adam',
+    parser.add_argument('-op', '--optimizer', default='adagrad',
                         help='Which optimizer to use?')
-    parser.add_argument('-lr', '--learning_rate', default=0.001, type=float,
+    parser.add_argument('-lr', '--learning_rate', default=0.01, type=float,
                         help='Value of learning rate?')
     parser.add_argument('-layer_drop', '--layer_prepostprocess_dropout', default=0.0, type=float,
                         help='Dropout rate for data input?')
@@ -34,7 +34,7 @@ def get_args():
                         help='Truncate the vocabulary less than equal to the count?')
     parser.add_argument('-eval_freq', '--model_eval_freq', default=10000, type=int,
                         help='The frequency of evaluation at training? not use if = 0.')
-    parser.add_argument('-max_context_len', '--max_context_len', default=300, type=int,
+    parser.add_argument('-max_context_len', '--max_context_len', default=1000, type=int,
                         help='Max of context length?')
     parser.add_argument('-vprocess', '--voc_process', default='',
                         help='Preprocess of vocab?')
@@ -46,8 +46,6 @@ def get_args():
                         help='Size of dimension?')
     parser.add_argument('-ns', '--number_samples', default=0, type=int,
                         help='Number of samples used in Softmax?')
-    parser.add_argument('-max_abbrs', '--max_abbrs', default=3, type=int,
-                        help='Size of targets?')
 
     # For Transformer
     parser.add_argument('-pos', '--hparams_pos', default='timing',
@@ -58,10 +56,10 @@ def get_args():
                         help='Number of hidden layer?')
     parser.add_argument('-nel', '--num_encoder_layers', default=2, type=int,
                         help='Number of encoder layer?')
-    parser.add_argument('-ndl', '--num_decoder_layers', default=2, type=int,
-                        help='Number of decoder layer?')
     parser.add_argument('-nh', '--num_heads', default=2, type=int,
                         help='Number of multi-attention heads?')
+    parser.add_argument('-hub_emb', '--hub_module_embedding', default='',
+                        help='The hub module used for extra embedding?')
 
     # For Our Idea
     parser.add_argument('-ag_mode', '--aggregate_mode', default='selfattn',
@@ -86,9 +84,7 @@ def list_config(config):
 
 
 def get_path(file_path, env='sys'):
-    if env == 'crc':
-        return "/zfs1/hdaqing/saz31/wsd/tmp/" + file_path
-    elif env == 'aws':
+    if env == 'aws':
         return '/home/zhaos5/projs/wsd/wsd_perf/tmp/' + file_path
     else:
         return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
@@ -108,13 +104,13 @@ class DummyConfig():
 
     max_context_len = args.max_context_len
     aggregate_mode = args.aggregate_mode
-    max_abbrs = args.max_abbrs
+    if aggregate_mode is not None:
+        aggregate_mode = aggregate_mode.split(':')
     subword_vocab_size = 1
 
     num_heads = args.num_heads
     num_hidden_layers = args.num_hidden_layers
     num_encoder_layers = args.num_encoder_layers
-    num_decoder_layers = args.num_decoder_layers
     hparams_pos = args.hparams_pos
     enc_postprocess = args.enc_postprocess.split(':')
     voc_process = args.voc_process.split(':')
@@ -124,6 +120,7 @@ class DummyConfig():
         voc_file = get_path('../wsd_data/medline/subvoc_abbr.txt')
     else:
         voc_file = get_path('../wsd_data/medline/subvoc.txt')
+    hub_module_embedding = args.hub_module_embedding
 
     dimension = args.dimension
     layer_prepostprocess_dropout = args.layer_prepostprocess_dropout

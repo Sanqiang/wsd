@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 """Creates a RevNet with the bottleneck residual function.
 
 Implements the following equations described in the RevNet paper:
@@ -36,9 +35,6 @@ https://arxiv.org/pdf/1707.04585.pdf
 """
 
 import functools
-
-# Dependency imports
-
 from tensor2tensor.layers import common_hparams
 from tensor2tensor.layers import rev_block
 from tensor2tensor.utils import registry

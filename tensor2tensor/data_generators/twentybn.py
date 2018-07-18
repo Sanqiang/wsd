@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Data generator for twenty bn video data-set."""
 
 from __future__ import absolute_import
@@ -20,10 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
-# Dependency imports
-
-from tensor2tensor.data_generators import image_utils
+from tensor2tensor.data_generators import video_utils
 from tensor2tensor.utils import registry
 
 import tensorflow as tf
@@ -31,17 +27,6 @@ import tensorflow as tf
 
 _FILE_VIDEO_PATTERN = '20bn-something-something-v1'
 _FILE_LABEL_PATTERN = 'something-something-v1-'
-
-_TWENTYBN_IMAGE_SIZE = 32
-
-
-def resize_video_frames(images, size):
-  resized_images = []
-  for image in images:
-    resized_images.append(
-        tf.to_int64(tf.image.resize_images(
-            image, [size, size], tf.image.ResizeMethod.BILINEAR)))
-  return resized_images
 
 
 def twentybn_generator(tmp_dir, training):
@@ -100,8 +85,8 @@ def twentybn_generator(tmp_dir, training):
 
 
 @registry.register_problem
-class VideoTwentybn(image_utils.Image2ClassProblem):
-  """Videonet."""
+class VideoTwentybn(video_utils.Video2ClassProblem):
+  """Problem for twenty bn something-something dataset."""
 
   @property
   def is_small(self):
@@ -119,9 +104,13 @@ class VideoTwentybn(image_utils.Image2ClassProblem):
   def dev_shards(self):
     return 10
 
+  @property
+  def image_size(self):
+    return 32
+
   def preprocess_example(self, example, unused_mode, unused_hparams):
-    example['inputs'] = resize_video_frames(example['inputs'],
-                                            _TWENTYBN_IMAGE_SIZE)
+    example['inputs'] = video_utils.resize_video_frames(
+        example['inputs'], self.image_size)
     return example
 
   def generator(self, data_dir, tmp_dir, is_training):

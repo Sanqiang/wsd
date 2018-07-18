@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Algorithmic data generators for symbolic math tasks.
 
 See go/symbolic-math-dataset
@@ -24,11 +23,8 @@ from __future__ import print_function
 
 from collections import namedtuple
 import random
-
-# Dependency imports
-
 import six
-from six.moves import xrange  # pylint: disable=redefined-builtin
+from six.moves import range  # pylint: disable=redefined-builtin
 import sympy
 
 
@@ -181,7 +177,7 @@ def algebra_inverse_solve(left, right, var, solve_ops):
           right- Expression on the right side of the op.
           to_tree- The tree on the other side of the equal sign. The canceled
               out expression will be moved here.
-          new_from_tree- The resuling from_tree after the algebraic
+          new_from_tree- The resulting from_tree after the algebraic
               manipulation.
           new_to_tree- The resulting to_tree after the algebraic manipulation.
 
@@ -355,8 +351,8 @@ def generate_calculus_integrate_sample(vlist, ops, min_depth, max_depth,
 # functions: Dict of special function names. Maps human readable string names to
 #     single char names used in flist.
 # ops: Dict mapping op symbols (chars) to ExprOp instances.
-# solve_ops: Encodes rules for how to algebraicly cancel out each operation. See
-#     doc-string for `algebra_inverse_solve`.
+# solve_ops: Encodes rules for how to algebraically cancel out each operation.
+#     See doc-string for `algebra_inverse_solve`.
 # int_encoder: Function that maps a string to a list of tokens. Use this to
 #     encode an expression to feed into a model.
 # int_decoder: Function that maps a list of tokens to a string. Use this to
@@ -377,7 +373,7 @@ def math_dataset_init(alphabet_size=26, digits=None, functions=None):
 
   Args:
     alphabet_size: How many possible variables there are. Max 52.
-    digits: How many numerical digits to encode as tokens, "0" throuh
+    digits: How many numerical digits to encode as tokens, "0" through
         str(digits-1), or None to encode no digits.
     functions: Defines special functions. A dict mapping human readable string
         names, like "log", "exp", "sin", "cos", etc., to single chars. Each
@@ -421,7 +417,7 @@ def math_dataset_init(alphabet_size=26, digits=None, functions=None):
     raise ValueError("digits cannot must be between 1 and 10. Got %s." % digits)
   vlist = alphabet[:alphabet_size]
   if digits is not None:
-    dlist = [str(d) for d in xrange(digits)]
+    dlist = [str(d) for d in range(digits)]
   else:
     dlist = []
   if functions is None:
@@ -481,7 +477,7 @@ def algebra_inverse(alphabet_size=26, min_depth=0, max_depth=2,
                      "Got max_depth=%s, min_depth=%s" % (max_depth, min_depth))
 
   alg_cfg = math_dataset_init(alphabet_size)
-  for _ in xrange(nbr_cases):
+  for _ in range(nbr_cases):
     sample, target = generate_algebra_inverse_sample(
         alg_cfg.vlist,
         list(alg_cfg.ops.values()), alg_cfg.solve_ops, min_depth, max_depth)
@@ -522,7 +518,7 @@ def algebra_simplify(alphabet_size=26,
                      "Got max_depth=%s, min_depth=%s" % (max_depth, min_depth))
 
   alg_cfg = math_dataset_init(alphabet_size, digits=5)
-  for _ in xrange(nbr_cases):
+  for _ in range(nbr_cases):
     sample, target = generate_algebra_simplify_sample(
         alg_cfg.vlist, list(alg_cfg.ops.values()), min_depth, max_depth)
     yield {

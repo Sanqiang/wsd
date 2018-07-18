@@ -12,16 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Device placement and data parallelism."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import inspect
-
-# Dependency imports
-
 from tensor2tensor.utils import expert_utils as eu
 import tensorflow as tf
 
@@ -166,7 +162,8 @@ def data_parallelism(daisy_chain_variables=True,
           _replica_device_setter(worker_job + "/GPU:%d" % d)
           for d in _gpu_order(worker_gpu)
       ]
-      caching_devices = [worker_job + "/GPU:0"] * worker_gpu
+      # caching_devices = [worker_job + "/GPU:0"] * worker_gpu
+      caching_devices = None
     else:
       datashard_devices = [_replica_device_setter(worker_job)]
       caching_devices = None

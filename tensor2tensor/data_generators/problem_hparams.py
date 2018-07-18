@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Hyperparameters defining different problems.
 
 """
@@ -21,9 +20,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
-# Dependency imports
-
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_encoder
 from tensor2tensor.layers import modalities  # pylint: disable=unused-import
@@ -31,7 +27,7 @@ from tensor2tensor.utils import registry
 
 import tensorflow as tf
 
-# TODO(rsepassi): Merge these problems with their data generators. Currenlty
+# TODO(rsepassi): Merge these problems with their data generators. Currently
 # they only implement the hparams.
 
 

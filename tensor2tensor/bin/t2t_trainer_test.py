@@ -12,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Tests for t2t_trainer."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
 from tensor2tensor.bin import t2t_trainer
 from tensor2tensor.utils import trainer_lib_test
 
@@ -36,7 +32,7 @@ class TrainerTest(tf.test.TestCase):
     trainer_lib_test.TrainerLibTest.setUpClass()
 
   def testTrain(self):
-    FLAGS.problems = "tiny_algo"
+    FLAGS.problem = "tiny_algo"
     FLAGS.model = "transformer"
     FLAGS.hparams_set = "transformer_tiny"
     FLAGS.train_steps = 1

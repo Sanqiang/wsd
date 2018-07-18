@@ -12,29 +12,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Utilities for data generators."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from collections import defaultdict
 import gzip
+import multiprocessing as mp
 import os
 import random
 import stat
 import tarfile
-
-# Dependency imports
-
+import tempfile
 import requests
 import six
-from six.moves import xrange  # pylint: disable=redefined-builtin
-import six.moves.urllib_request as urllib  # Imports urllib on Python2, urllib.request on Python3
+from six.moves import range  # pylint: disable=redefined-builtin
+# Imports urllib on Python2, urllib.request on Python3
+import six.moves.urllib_request as urllib
 
 from tensor2tensor.data_generators import text_encoder
-from tensor2tensor.data_generators import tokenizer
 
 import tensorflow as tf
 
@@ -46,7 +43,7 @@ def to_example(dictionary):
   features = {}
   for (k, v) in six.iteritems(dictionary):
     if not v:
-      raise ValueError("Empty generated field: %s", str((k, v)))
+      raise ValueError("Empty generated field: %s" % str((k, v)))
     if isinstance(v[0], six.integer_types):
       features[k] = tf.train.Feature(int64_list=tf.train.Int64List(value=v))
     elif isinstance(v[0], float):
@@ -121,7 +118,7 @@ def sharded_name(base_name, shard, total_shards):
 
 def shard_filepath(fname, num_shards):
   return [
-      sharded_name(fname, shard, num_shards) for shard in xrange(num_shards)
+      sharded_name(fname, shard, num_shards) for shard in range(num_shards)
   ]
 
 
@@ -132,7 +129,8 @@ def outputs_exist(filenames):
       return out_fname
 
 
-def generate_files(generator, output_filenames, max_cases=None):
+def generate_files(generator, output_filenames,
+                   max_cases=None, cycle_every_n=1):
   """Generate cases from a generator and save as TFRecord files.
 
   Generated cases are transformed to tf.Example protos and saved as TFRecords
@@ -143,9 +141,12 @@ def generate_files(generator, output_filenames, max_cases=None):
     output_filenames: List of output file paths.
     max_cases: maximum number of cases to get from the generator;
       if None (default), we use the generator until StopIteration is raised.
+    cycle_every_n: how many cases from the generator to take before
+      switching to the next shard; by default set to 1, switch every case.
   """
   if outputs_exist(output_filenames):
-    tf.logging.info("Skipping generator because outputs files exist")
+    tf.logging.info("Skipping generator because outputs files exists at {}"
+                    .format(output_filenames))
     return
   tmp_filenames = [fname + ".incomplete" for fname in output_filenames]
   num_shards = len(output_filenames)
@@ -154,14 +155,15 @@ def generate_files(generator, output_filenames, max_cases=None):
   for case in generator:
     if case is None:
       continue
-    if counter > 0 and counter % 100000 == 0:
+    if counter % 100000 == 0:
       tf.logging.info("Generating case %d." % counter)
     counter += 1
     if max_cases and counter > max_cases:
       break
     example = to_example(case)
     writers[shard].write(example.SerializeToString())
-    shard = (shard + 1) % num_shards
+    if counter % cycle_every_n == 0:
+      shard = (shard + 1) % num_shards
 
   for writer in writers:
     writer.close()
@@ -202,34 +204,33 @@ def maybe_download(directory, filename, uri):
   Returns:
     The path to the downloaded file.
   """
-  if not tf.gfile.Exists(directory):
-    tf.logging.info("Creating directory %s" % directory)
-    tf.gfile.MakeDirs(directory)
+  tf.gfile.MakeDirs(directory)
   filepath = os.path.join(directory, filename)
-  if not tf.gfile.Exists(filepath):
-    tf.logging.info("Downloading %s to %s" % (uri, filepath))
-    try:
-      tf.gfile.Copy(uri, filepath)
-    except tf.errors.UnimplementedError:
-      if uri.startswith("http"):
-        inprogress_filepath = filepath + ".incomplete"
-        inprogress_filepath, _ = urllib.urlretrieve(
-            uri, inprogress_filepath, reporthook=download_report_hook)
-        # Print newline to clear the carriage return from the download progress
-        print()
-        tf.gfile.Rename(inprogress_filepath, filepath)
-      else:
-        raise ValueError("Unrecognized URI: " + filepath)
-    statinfo = os.stat(filepath)
-    tf.logging.info("Successfully downloaded %s, %s bytes." %
-                    (filename, statinfo.st_size))
-  else:
+  if tf.gfile.Exists(filepath):
     tf.logging.info("Not downloading, file already found: %s" % filepath)
+    return filepath
+
+  tf.logging.info("Downloading %s to %s" % (uri, filepath))
+  try:
+    tf.gfile.Copy(uri, filepath)
+  except tf.errors.UnimplementedError:
+    if uri.startswith("http"):
+      inprogress_filepath = filepath + ".incomplete"
+      inprogress_filepath, _ = urllib.urlretrieve(
+          uri, inprogress_filepath, reporthook=download_report_hook)
+      # Print newline to clear the carriage return from the download progress
+      print()
+      tf.gfile.Rename(inprogress_filepath, filepath)
+    else:
+      raise ValueError("Unrecognized URI: " + filepath)
+  statinfo = os.stat(filepath)
+  tf.logging.info("Successfully downloaded %s, %s bytes." %
+                  (filename, statinfo.st_size))
   return filepath
 
 
 def maybe_download_from_drive(directory, filename, url):
-  """Download filename from google drive unless it's already in directory.
+  """Download filename from Google drive unless it's already in directory.
 
   Args:
     directory: path to the directory that will be used.
@@ -299,40 +300,42 @@ def gunzip_file(gz_path, new_path):
 
 
 def get_or_generate_vocab_inner(data_dir, vocab_filename, vocab_size,
-                                generator):
+                                generator, max_subtoken_length=None,
+                                reserved_tokens=None):
   """Inner implementation for vocab generators.
 
   Args:
     data_dir: The base directory where data and vocab files are stored. If None,
-        then do not save the vocab even if it doesn't exist.
+      then do not save the vocab even if it doesn't exist.
     vocab_filename: relative filename where vocab file is stored
     vocab_size: target size of the vocabulary constructed by SubwordTextEncoder
     generator: a generator that produces tokens from the vocabulary
+    max_subtoken_length: an optional integer.  Set this to a finite value to
+      avoid quadratic costs during vocab building.
+    reserved_tokens: List of reserved tokens. `text_encoder.RESERVED_TOKENS`
+      should be a prefix of `reserved_tokens`. If `None`, defaults to
+      `RESERVED_TOKENS`.
 
   Returns:
     A SubwordTextEncoder vocabulary object.
   """
-  if data_dir is None:
-    vocab_filepath = None
-  else:
+  if data_dir and vocab_filename:
     vocab_filepath = os.path.join(data_dir, vocab_filename)
-
-  if vocab_filepath is not None and tf.gfile.Exists(vocab_filepath):
-    tf.logging.info("Found vocab file: %s", vocab_filepath)
-    vocab = text_encoder.SubwordTextEncoder(vocab_filepath)
-    return vocab
+    if tf.gfile.Exists(vocab_filepath):
+      tf.logging.info("Found vocab file: %s", vocab_filepath)
+      return text_encoder.SubwordTextEncoder(vocab_filepath)
+  else:
+    vocab_filepath = None
 
   tf.logging.info("Generating vocab file: %s", vocab_filepath)
-  token_counts = defaultdict(int)
-  for item in generator:
-    for tok in tokenizer.encode(text_encoder.native_to_unicode(item)):
-      token_counts[tok] += 1
+  vocab = text_encoder.SubwordTextEncoder.build_from_generator(
+      generator, vocab_size, max_subtoken_length=max_subtoken_length,
+      reserved_tokens=reserved_tokens)
 
-  vocab = text_encoder.SubwordTextEncoder.build_to_target_size(
-      vocab_size, token_counts, 1, 1e3)
-
-  if vocab_filepath is not None:
+  if vocab_filepath:
+    tf.gfile.MakeDirs(data_dir)
     vocab.store_to_file(vocab_filepath)
+
   return vocab
 
 
@@ -341,6 +344,7 @@ def get_or_generate_vocab(data_dir, tmp_dir, vocab_filename, vocab_size,
   """Generate a vocabulary from the datasets in sources."""
 
   def generate():
+    """Generate lines for vocabulary generation."""
     tf.logging.info("Generating vocab from: %s", str(sources))
     for source in sources:
       url = source[0]
@@ -368,7 +372,6 @@ def get_or_generate_vocab(data_dir, tmp_dir, vocab_filename, vocab_size,
             gunzip_file(filepath, new_filepath)
           filepath = new_filepath
 
-        # Use Tokenizer to count the word occurrences.
         with tf.gfile.GFile(filepath, mode="r") as source_file:
           file_byte_budget_ = file_byte_budget
           counter = 0
@@ -470,17 +473,26 @@ def generate_dataset_and_shuffle(train_gen,
     shuffle_dataset(train_paths + dev_paths)
 
 
+def _shuffle_single(fname):
+  records = read_records(fname)
+  random.shuffle(records)
+  out_fname = fname.replace(UNSHUFFLED_SUFFIX, "")
+  write_records(records, out_fname)
+  tf.gfile.Remove(fname)
+
+
 def shuffle_dataset(filenames):
+  """Shuffles the dataset."""
   if outputs_exist(filenames):
     tf.logging.info("Skipping shuffle because output files exist")
     return
   tf.logging.info("Shuffling data...")
-  for fname in filenames:
-    records = read_records(fname)
-    random.shuffle(records)
-    out_fname = fname.replace(UNSHUFFLED_SUFFIX, "")
-    write_records(records, out_fname)
-    tf.gfile.Remove(fname)
+  if len(filenames) > 1:
+    pool = mp.Pool(min(len(filenames), 20))
+    pool.map(_shuffle_single, filenames)
+  else:
+    _shuffle_single(filenames[0])
+  tf.logging.info("Data shuffled.")
 
 
 class SequencePacker(object):
@@ -594,7 +606,7 @@ def pack_examples(examples,
     if chop_long_sequences and len(x) > packed_length:
       assert not has_inputs
       num_fragments = len(x) // packed_length
-      for i in xrange(num_fragments):
+      for i in range(num_fragments):
         yield packer(
             x[packed_length * i:packed_length * (i + 1)], spacing).to_dict()
       x = x[packed_length * num_fragments:]
@@ -611,3 +623,66 @@ def pack_examples(examples,
       combined.append(packer(x, spacing))
   for c in combined:
     yield c.to_dict()
+
+
+def make_tmp_dir(suffix="", prefix="tmp", dir=None):  # pylint: disable=redefined-builtin
+  """Make a temporary directory."""
+  if dir is None:
+    return tempfile.mkdtemp(suffix, prefix, dir)
+  else:
+    while True:
+      rand_term = random.randint(1, 9999)
+      tmp_dir = os.path.join(dir, "%s%d%s" % (prefix, rand_term, suffix))
+      if tf.gfile.Exists(tmp_dir):
+        continue
+      tf.gfile.MakeDirs(tmp_dir)
+      break
+    return tmp_dir
+
+
+def tfrecord_iterator_for_problem(problem, data_dir,
+                                  dataset_split=tf.estimator.ModeKeys.TRAIN):
+  """Iterate over the records on disk for the Problem."""
+  filenames = tf.gfile.Glob(problem.filepattern(data_dir, mode=dataset_split))
+  example_spec = problem.example_reading_spec()[0]
+  return tfrecord_iterator(filenames, example_spec=example_spec)
+
+
+def tfrecord_iterator(filenames, gzipped=False, example_spec=None):
+  """Yields records from TFRecord files.
+
+  Args:
+    filenames: list<str>, list of TFRecord filenames to read from.
+    gzipped: bool, whether the TFRecord files are gzip-encoded.
+    example_spec: dict<str feature name, tf.VarLenFeature/tf.FixedLenFeature>,
+      if provided, will parse each record as a tensorflow.Example proto.
+
+  Yields:
+    Records (or parsed Examples, if example_spec is provided) from files.
+  """
+  with tf.Graph().as_default():
+    dataset = tf.data.Dataset.from_tensor_slices(filenames)
+
+    def _load_records(filename):
+      return tf.data.TFRecordDataset(
+          filename,
+          compression_type=tf.constant("GZIP") if gzipped else None,
+          buffer_size=16 * 1000 * 1000)
+
+    dataset = dataset.flat_map(_load_records)
+
+    def _parse_example(ex_ser):
+      return tf.parse_single_example(ex_ser, example_spec)
+
+    if example_spec:
+      dataset = dataset.map(_parse_example, num_parallel_calls=32)
+    dataset = dataset.prefetch(100)
+    record_it = dataset.make_one_shot_iterator().get_next()
+
+    with tf.Session() as sess:
+      while True:
+        try:
+          ex = sess.run(record_it)
+          yield ex
+        except tf.errors.OutOfRangeError:
+          break

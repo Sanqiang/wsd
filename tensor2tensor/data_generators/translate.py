@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Data generators for translation data-sets."""
 
 from __future__ import absolute_import
@@ -21,11 +20,9 @@ from __future__ import print_function
 
 import os
 import tarfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import problem
+from tensor2tensor.data_generators import text_encoder
 from tensor2tensor.data_generators import text_problems
 
 import tensorflow as tf
@@ -159,3 +156,53 @@ def compile_data(tmp_dir, datasets, filename):
               lang2_resfile.write("\n")
 
   return filename
+
+
+class TranslateDistillProblem(TranslateProblem):
+  """Base class for translation problems."""
+
+  def is_generate_per_split(self):
+    return True
+
+  def example_reading_spec(self):
+    data_fields = {"dist_targets": tf.VarLenFeature(tf.int64)}
+
+    if self.has_inputs:
+      data_fields["inputs"] = tf.VarLenFeature(tf.int64)
+
+    # hack: ignoring true targets and putting dist_targets in targets
+    data_items_to_decoders = {
+        "inputs": tf.contrib.slim.tfexample_decoder.Tensor("inputs"),
+        "targets": tf.contrib.slim.tfexample_decoder.Tensor("dist_targets"),
+    }
+
+    return (data_fields, data_items_to_decoders)
+
+  def get_or_create_vocab(self, data_dir, tmp_dir, force_get=False):
+    """Get vocab for distill problems."""
+    # We assume that vocab file is present in data_dir directory where the
+    # data generated will be stored.
+    vocab_filepath = os.path.join(data_dir, self.vocab_filename)
+    encoder = text_encoder.SubwordTextEncoder(vocab_filepath)
+    return encoder
+
+  def generate_encoded_samples(self, data_dir, tmp_dir, dataset_split):
+    generator = self.generate_samples(data_dir, tmp_dir, dataset_split)
+    vocab = self.get_or_create_vocab(data_dir, tmp_dir)
+    # For each example, encode the text and append EOS ID.
+    for sample in generator:
+      if self.has_inputs:
+        sample["inputs"] = vocab.encode(sample["inputs"])
+        sample["inputs"].append(text_encoder.EOS_ID)
+        sample["targets"] = vocab.encode(sample["targets"])
+        sample["targets"].append(text_encoder.EOS_ID)
+        sample["dist_targets"] = vocab.encode(sample["dist_targets"])
+        sample["dist_targets"].append(text_encoder.EOS_ID)
+        yield sample
+
+  def generate_samples(self, data_dir, tmp_dir, dataset_split):
+    data_path = self.source_data_files(dataset_split)
+    assert tf.gfile.Exists(data_path)
+    return text_problems.text2text_distill_iterator(data_path + "inputs",
+                                                    data_path + "gold",
+                                                    data_path + "prediction")

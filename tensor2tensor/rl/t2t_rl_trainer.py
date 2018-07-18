@@ -12,11 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Training of RL agent with PPO algorithm."""
-
-# Dependency imports
-
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 from tensor2tensor.rl import rl_trainer_lib
 from tensor2tensor.utils import flags as t2t_flags  # pylint: disable=unused-import
 from tensor2tensor.utils import trainer_lib
@@ -27,7 +26,7 @@ flags = tf.flags
 FLAGS = flags.FLAGS
 
 # To maintain compatibility with some internal libs, we guard against these flag
-# definitions possibly erroring. Apologies for the ugliness.
+# definitions possibly erring. Apologies for the ugliness.
 try:
   flags.DEFINE_string("output_dir", "", "Base output directory for run.")
 except:  # pylint: disable=bare-except
@@ -36,7 +35,7 @@ except:  # pylint: disable=bare-except
 
 def main(_):
   hparams = trainer_lib.create_hparams(FLAGS.hparams_set, FLAGS.hparams)
-  rl_trainer_lib.train(hparams, FLAGS.problems, FLAGS.output_dir)
+  rl_trainer_lib.train(hparams, FLAGS.problem, FLAGS.output_dir)
 
 
 if __name__ == "__main__":

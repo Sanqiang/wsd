@@ -12,27 +12,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Layers common to multiple models."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 from collections import defaultdict
+
 import contextlib
 import functools
+from functools import partial
 import math
-import random
-
-# Dependency imports
 
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
-from tensor2tensor.utils import expert_utils as eu
+from six.moves import range  # pylint: disable=redefined-builtin
 
 import tensorflow as tf
 
-from tensorflow.python.eager import context as tfe_context
 from tensorflow.python.framework import function
 from tensorflow.python.framework import ops
 
@@ -40,8 +36,43 @@ from tensorflow.python.framework import ops
 allow_defun = False
 
 
+# Lazy load inplace_ops
+def tf_inplace_ops():
+  from tensorflow.python.ops import inplace_ops  # pylint: disable=g-import-not-at-top
+  return inplace_ops
+
+
+@function.Defun(
+    python_grad_func=lambda x, dy: tf.convert_to_tensor(dy),
+    shape_func=lambda op: [op.inputs[0].get_shape()])
+def convert_gradient_to_tensor(x):
+  """Identity operation whose gradient is converted to a `Tensor`.
+
+  Currently, the gradient to `tf.concat` is particularly expensive to
+  compute if dy is an `IndexedSlices` (a lack of GPU implementation
+  forces the gradient operation onto CPU).  This situation occurs when
+  the output of the `tf.concat` is eventually passed to `tf.gather`.
+  It is sometimes faster to convert the gradient to a `Tensor`, so as
+  to get the cheaper gradient for `tf.concat`.  To do this, replace
+  `tf.concat(x)` with `convert_gradient_to_tensor(tf.concat(x))`.
+
+  Args:
+    x: A `Tensor`.
+
+  Returns:
+    The input `Tensor`.
+  """
+  return x
+
+
 def is_on_tpu():
-  return tf.contrib.framework.get_name_scope().startswith("TPUReplicate")
+  # Support TF versions 1.5+
+  try:
+    from tensorflow.python.ops import control_flow_util  # pylint: disable=g-import-not-at-top
+    ctxt = tf.get_default_graph()._get_control_flow_context()  # pylint: disable=protected-access
+    return control_flow_util.GetContainingXLAContext(ctxt) is not None
+  except (ImportError, AttributeError):
+    return tf.contrib.framework.get_name_scope().startswith("TPUReplicate")
 
 
 def dropout_with_broadcast_dims(x, keep_prob, broadcast_dims=None, **kwargs):
@@ -58,15 +89,19 @@ def dropout_with_broadcast_dims(x, keep_prob, broadcast_dims=None, **kwargs):
     broadcast_dims: an optional list of integers
       the dimensions along which to broadcast the keep/drop flags.
     **kwargs: keyword arguments to tf.nn.dropout other than "noise_shape".
+
   Returns:
-    A Tensor with the same size and shape as x.
+    Tensor of the same shape as x.
   """
   assert "noise_shape" not in kwargs
   if broadcast_dims:
     shape = tf.shape(x)
     ndims = len(x.get_shape())
+    # Allow dimensions like "-1" as well.
+    broadcast_dims = [dim + ndims if dim < 0 else dim for dim in broadcast_dims]
     kwargs["noise_shape"] = [
-        1 if i in broadcast_dims else shape[i] for i in xrange(ndims)]
+        1 if i in broadcast_dims else shape[i] for i in range(ndims)
+    ]
   return tf.nn.dropout(x, keep_prob, **kwargs)
 
 
@@ -175,9 +210,48 @@ def convert_rgb_to_real(x):
   """Conversion of pixel values to real numbers."""
   with tf.name_scope("rgb_to_real", values=[x]):
     x = tf.to_float(x)
-    # Use the formula (value/128) - 1 to convert each channel value into a
-    # real number in the range -1 to 1.
-    x = (x / 128) - 1
+    x /= 255.0
+    return x
+
+
+def convert_rgb_to_symmetric_real(x):
+  """Conversion of pixel values to real numbers."""
+  with tf.name_scope("rgb_to_real", values=[x]):
+    x = tf.to_float(x)
+    # Convert each pixel intensity in [0, 1, 2, ..., 255] into a real number in
+    # the range [-1, 1].
+    x = (x / 127.5) - 1
+    return x
+
+
+def convert_real_to_rgb(x):
+  """Conversion of real numbers to pixel values."""
+  with tf.name_scope("real_to_rgb", values=[x]):
+    x *= 255.0
+    return x
+
+
+def expand_squeeze_to_nd(x, n, squeeze_dim=2, expand_dim=-1):
+  """Make x n-d with squeeze and expand_dims."""
+  if len(x.shape) > n:
+    while len(x.shape) != n:
+      x = tf.squeeze(x, [squeeze_dim])
+  else:
+    while len(x.shape) != n:
+      x = tf.expand_dims(x, expand_dim)
+  return x
+
+
+def standardize_images(x):
+  """Image standardization on batches."""
+  with tf.name_scope("standardize_images", [x]):
+    x = tf.to_float(x)
+    x_mean = tf.reduce_mean(x, axis=[1, 2, 3], keepdims=True)
+    x_variance = tf.reduce_mean(
+        tf.square(x - x_mean), axis=[1, 2, 3], keepdims=True)
+    x_shape = shape_list(x)
+    num_pixels = tf.to_float(x_shape[1] * x_shape[2] * x_shape[3])
+    x = (x - x_mean) / tf.maximum(tf.sqrt(x_variance), tf.rsqrt(num_pixels))
     return x
 
 
@@ -189,15 +263,48 @@ def flatten4d3d(x):
 
 
 # TODO(noam): remove this function after TPUs do gather faster.
-def gather(params, indices):
+def gather(params, indices, dtype=tf.float32):
   """Version of tf.gather that works faster on tpu."""
   if not is_on_tpu():
     return tf.gather(params, indices)
   vocab_size = params.get_shape().as_list()[0]
   indices_flat = tf.reshape(indices, [-1])
-  out = tf.matmul(tf.one_hot(indices_flat, vocab_size), params)
-  out = eu.reshape_like(out, tf.expand_dims(indices, -1))
+  out = tf.matmul(tf.one_hot(indices_flat, vocab_size, dtype=dtype), params)
+  out = reshape_like(out, tf.expand_dims(indices, -1))
   return out
+
+
+# TODO(noam): remove this function after TPUs do cumsum faster.
+def cumsum(x, axis=0, exclusive=False):
+  """TPU hack for tf.cumsum.
+
+  This is equivalent to tf.cumsum and is faster on TPU as of 04/2018 unless
+  the axis dimension is very large.
+
+  Args:
+    x: a Tensor
+    axis: an integer
+    exclusive: a boolean
+
+  Returns:
+    Tensor of the same shape as x.
+  """
+  if not is_on_tpu():
+    return tf.cumsum(x, axis=axis, exclusive=exclusive)
+  x_shape = shape_list(x)
+  rank = len(x_shape)
+  length = x_shape[axis]
+  my_range = tf.range(length)
+  comparator = tf.less if exclusive else tf.less_equal
+  mask = tf.cast(
+      comparator(tf.expand_dims(my_range, 1), tf.expand_dims(my_range, 0)),
+      x.dtype)
+  ret = tf.tensordot(x, mask, axes=[[axis], [0]])
+  if axis != rank - 1:
+    ret = tf.transpose(
+        ret,
+        list(range(axis)) + [rank - 1] + list(range(axis, rank - 1)))
+  return ret
 
 
 def dropout_no_scaling(x, keep_prob):
@@ -206,29 +313,37 @@ def dropout_no_scaling(x, keep_prob):
   Args:
     x: a Tensor
     keep_prob: a floating point number
+
   Returns:
-    a Tensor of the same size and shape as x
+    Tensor of the same shape as x.
   """
   if keep_prob == 1.0:
     return x
-  return x * tf.cast(
-      tf.less(tf.random_uniform(tf.shape(x)), keep_prob), x.dtype)
+  mask = tf.less(tf.random_uniform(tf.shape(x)), keep_prob)
+  return x * cast_like(mask, x)
 
 
-def embedding(x, vocab_size, dense_size, name=None, reuse=None, multiplier=1.0,
-              symbol_dropout_rate=0.0, embedding_var=None):
+def embedding(x,
+              vocab_size,
+              dense_size,
+              name=None,
+              reuse=None,
+              multiplier=1.0,
+              symbol_dropout_rate=0.0,
+              embedding_var=None,
+              dtype=tf.float32):
   """Embed x of type int64 into dense vectors, reducing to max 4 dimensions."""
   with tf.variable_scope(
-      name, default_name="embedding", values=[x], reuse=reuse):
+      name, default_name="embedding", values=[x], reuse=reuse, dtype=dtype):
     if embedding_var is None:
       embedding_var = tf.get_variable("kernel", [vocab_size, dense_size])
     # On the backwards pass, we want to convert the gradient from
     # an indexed-slices to a regular tensor before sending it back to the
     # parameter server. This avoids excess computation on the parameter server.
-    if not tfe_context.in_eager_mode():
-      embedding_var = eu.convert_gradient_to_tensor(embedding_var)
+    if not tf.contrib.eager.in_eager_mode():
+      embedding_var = convert_gradient_to_tensor(embedding_var)
     x = dropout_no_scaling(x, 1.0 - symbol_dropout_rate)
-    emb_x = gather(embedding_var, x)
+    emb_x = gather(embedding_var, x, dtype)
     if multiplier != 1.0:
       emb_x *= multiplier
     static_shape = emb_x.shape.as_list()
@@ -291,7 +406,7 @@ def conv_stride2_multistep(x, nbr_steps, output_filters, name=None, reuse=None):
       out = conv(x, output_filters, (1, 1))
       return out, [out]
     hidden_layers = [x]
-    for i in xrange(nbr_steps):
+    for i in range(nbr_steps):
       hidden_layers.append(
           conv(
               hidden_layers[-1],
@@ -347,7 +462,7 @@ def deconv_stride2_multistep(x,
       return tf.depth_to_space(thicker, 2)
 
     cur = x
-    for i in xrange(nbr_steps):
+    for i in range(nbr_steps):
       if cur.get_shape()[2] == 1:
         cur = deconv1d(cur, i)
       else:
@@ -403,7 +518,7 @@ def conv_internal(conv_fn, inputs, filters, kernel_size, **kwargs):
   return conv2d_kernel(kernel_size, "single")
 
 
-def conv(inputs, filters, kernel_size, dilation_rate=1, **kwargs):
+def conv(inputs, filters, kernel_size, dilation_rate=(1, 1), **kwargs):
   return conv_internal(
       tf.layers.conv2d,
       inputs,
@@ -489,13 +604,13 @@ def tpu_conv1d(inputs, filters, kernel_size, padding="SAME", name="tpu_conv1d"):
   last_offset = first_offset + kernel_size - 1
   results = []
   padded = tf.pad(inputs, [[0, 0], [-first_offset, last_offset], [0, 0]])
-  for i in xrange(kernel_size):
+  for i in range(kernel_size):
     shifted = tf.slice(padded, [0, i, 0], tf.shape(inputs)) if i else inputs
     shifted.set_shape(inputs.get_shape())
-    results.append(dense(
-        shifted, filters, use_bias=(i == 0), name=name + "_%d" % i))
+    results.append(
+        dense(shifted, filters, use_bias=(i == 0), name=name + "_%d" % i))
   ret = tf.add_n(results)
-  ret *= kernel_size ** -0.5
+  ret *= kernel_size**-0.5
   return ret
 
 
@@ -510,8 +625,9 @@ def layer_norm_vars(filters):
 
 def layer_norm_compute_python(x, epsilon, scale, bias):
   """Layer norm raw computation."""
-  mean = tf.reduce_mean(x, axis=[-1], keep_dims=True)
-  variance = tf.reduce_mean(tf.square(x - mean), axis=[-1], keep_dims=True)
+  epsilon, scale, bias = [cast_like(t, x) for t in [epsilon, scale, bias]]
+  mean = tf.reduce_mean(x, axis=[-1], keepdims=True)
+  variance = tf.reduce_mean(tf.square(x - mean), axis=[-1], keepdims=True)
   norm_x = (x - mean) * tf.rsqrt(variance + epsilon)
   return norm_x * scale + bias
 
@@ -534,7 +650,7 @@ def layer_norm_compute(x, epsilon, scale, bias):
 def layer_norm(x, filters=None, epsilon=1e-6, name=None, reuse=None):
   """Layer normalize the tensor x, averaging over the last dimension."""
   if filters is None:
-    filters = x.get_shape()[-1]
+    filters = shape_list(x)[-1]
   with tf.variable_scope(
       name, default_name="layer_norm", values=[x], reuse=reuse):
     scale = tf.get_variable(
@@ -547,6 +663,27 @@ def layer_norm(x, filters=None, epsilon=1e-6, name=None, reuse=None):
     else:
       result = layer_norm_compute_python(x, epsilon, scale, bias)
     return result
+
+
+def group_norm(x, filters=None, num_groups=8, epsilon=1e-5):
+  """Group normalization as in https://arxiv.org/abs/1803.08494."""
+  x_shape = shape_list(x)
+  if filters is None:
+    filters = x_shape[-1]
+  assert len(x_shape) == 4
+  assert filters % num_groups == 0
+  # Prepare variables.
+  scale = tf.get_variable(
+      "group_norm_scale", [filters], initializer=tf.ones_initializer())
+  bias = tf.get_variable(
+      "group_norm_bias", [filters], initializer=tf.zeros_initializer())
+  epsilon, scale, bias = [cast_like(t, x) for t in [epsilon, scale, bias]]
+  # Reshape and compute group norm.
+  x = tf.reshape(x, x_shape[:-1] + [num_groups, filters // num_groups])
+  # Calculate mean and variance on heights, width, channels (not groups).
+  mean, variance = tf.nn.moments(x, [1, 2, 4], keep_dims=True)
+  norm_x = (x - mean) * tf.rsqrt(variance + epsilon)
+  return tf.reshape(norm_x, x_shape) * scale + bias
 
 
 def noam_norm(x, epsilon=1.0, name=None):
@@ -562,6 +699,8 @@ def apply_norm(x, norm_type, depth, epsilon):
   """Apply Normalization."""
   if norm_type == "layer":
     return layer_norm(x, filters=depth, epsilon=epsilon)
+  if norm_type == "group":
+    return group_norm(x, filters=depth, epsilon=epsilon)
   if norm_type == "batch":
     return tf.layers.batch_normalization(x, epsilon=epsilon)
   if norm_type == "noam":
@@ -630,7 +769,7 @@ def layer_preprocess(layer_input, hparams):
 
   See layer_prepostprocess() for details.
 
-  A hyperparemeters object is passed for convenience.  The hyperparameters
+  A hyperparameters object is passed for convenience.  The hyperparameters
   that may be used are:
 
     layer_preprocess_sequence
@@ -666,7 +805,7 @@ def layer_postprocess(layer_input, layer_output, hparams):
 
   See layer_prepostprocess() for details.
 
-  A hyperparemeters object is passed for convenience.  The hyperparameters
+  A hyperparameters object is passed for convenience.  The hyperparameters
   that may be used are:
 
     layer_postprocess_sequence
@@ -964,7 +1103,7 @@ def simple_attention(target, source, bias=None):
     if bias is not None:
       attention += tf.expand_dims(tf.squeeze(bias, axis=[2, 3]), axis=1)
     attention = tf.nn.softmax(attention)
-    if eu.should_generate_summaries():
+    if should_generate_summaries():
       tf.summary.image("attention", tf.expand_dims(attention, 3), max_outputs=5)
     attended = tf.matmul(attention, source)
     return tf.reshape(attended, target_shape)
@@ -1030,7 +1169,7 @@ def multiscale_conv_and_attention(x, padding, hparams, source=None):
       x,
       hparams.hidden_size,
       [((hparams.kernel_height**i, hparams.kernel_width**i),
-        (hparams.kernel_height, hparams.kernel_width)) for i in xrange(3)],
+        (hparams.kernel_height, hparams.kernel_width)) for i in range(3)],
       "AVG",
       padding=padding)
   # For residuals a rescale if necessary if channels differ.
@@ -1135,7 +1274,7 @@ def add_timing_signal(x, min_timescale=1, max_timescale=1e4, num_timescales=16):
   and the target of the attention.
 
   The use of relative position is possible because sin(x+y) and cos(x+y) can be
-  experessed in terms of y, sin(x) and cos(x).
+  expressed in terms of y, sin(x) and cos(x).
 
   In particular, we use a geometric sequence of timescales starting with
   min_timescale and ending with max_timescale.  For each timescale, we
@@ -1172,7 +1311,18 @@ def mask_from_embedding(emb):
   Returns:
     a 0.0/1.0 Tensor with shape [batch, width, height, 1].
   """
-  return weights_nonzero(tf.reduce_sum(tf.abs(emb), axis=3, keep_dims=True))
+  return weights_nonzero(tf.reduce_sum(tf.abs(emb), axis=3, keepdims=True))
+
+
+def length_from_embedding(emb):
+  """Compute the length of each sequence in the batch.
+
+  Args:
+    emb: a sequence embedding Tensor with shape [batch, max_time, 1, depth].
+  Returns:
+    a Tensor with shape [batch].
+  """
+  return tf.cast(tf.reduce_sum(mask_from_embedding(emb), [1, 2, 3]), tf.int32)
 
 
 def mask_leq(target_length, source_length):
@@ -1259,7 +1409,7 @@ def attention_1d_v0(source,
       mask = (1.0 - mask) * -1e9
       attention += mask
     attention = tf.nn.softmax(attention)
-    if eu.should_generate_summaries():
+    if should_generate_summaries():
       # Compute a color image summary.
       image = tf.reshape(attention,
                          [batch, num_heads, target_length, source_length])
@@ -1289,7 +1439,7 @@ def relu_density_logit(x, reduce_dims):
   Useful for histograms.
 
   Args:
-    x: a Tensor, typilcally the output of tf.relu
+    x: a Tensor, typically the output of tf.relu
     reduce_dims: a list of dimensions
 
   Returns:
@@ -1309,28 +1459,58 @@ def maybe_zero_out_padding(inputs, kernel_size, nonpadding_mask):
     nonpadding_mask: a Tensor with shape [batch, length]
 
   Returns:
-    a Tensor with the same shape as inputs
+    Tensor of the same shape as inputs.
   """
-  if (kernel_size != 1 and
-      kernel_size != (1, 1) and
+  if (kernel_size != 1 and kernel_size != (1, 1) and
       nonpadding_mask is not None):
     while nonpadding_mask.get_shape().ndims < inputs.get_shape().ndims:
       nonpadding_mask = tf.expand_dims(nonpadding_mask, -1)
     return inputs * nonpadding_mask
-  else:
-    return inputs
+
+  return inputs
 
 
-def dense_relu_dense(inputs, filter_size, output_size, dropout=0.0,
-                     dropout_broadcast_dims=None):
+def dense_relu_dense(inputs,
+                     filter_size,
+                     output_size,
+                     output_activation=None,
+                     dropout=0.0,
+                     dropout_broadcast_dims=None,
+                     name=None):
   """Hidden layer with RELU activation followed by linear projection."""
+  layer_name = "%s_{}" % name if name else "{}"
   h = dense(
-      inputs, filter_size, use_bias=True, activation=tf.nn.relu, name="conv1")
+      inputs,
+      filter_size,
+      use_bias=True,
+      activation=tf.nn.relu,
+      name=layer_name.format("conv1"))
+
   if dropout != 0.0:
     h = dropout_with_broadcast_dims(
         h, 1.0 - dropout, broadcast_dims=dropout_broadcast_dims)
-  o = dense(h, output_size, use_bias=True, name="conv2")
+  o = dense(
+      h,
+      output_size,
+      activation=output_activation,
+      use_bias=True,
+      name=layer_name.format("conv2"))
   return o
+
+
+def dense_dropconnect(inputs,
+                      output_size,
+                      dropconnect_dropout=0.0,
+                      name="dense_dropconnect",
+                      **kwargs):
+  """Dense layer with dropconnect."""
+
+  if dropconnect_dropout != 0.0:
+    tf.logging.info("Applying dropconnect as the kernel regularization.")
+    kwargs["kernel_regularizer"] = partial(
+        tf.nn.dropout, keep_prob=1.0 - dropconnect_dropout)
+
+  return dense(inputs, output_size, use_bias=True, name=name, **kwargs)
 
 
 def conv_relu_conv(inputs,
@@ -1341,19 +1521,63 @@ def conv_relu_conv(inputs,
                    padding="SAME",
                    nonpadding_mask=None,
                    dropout=0.0,
-                   name=None):
-  """Hidden layer with RELU activation followed by linear projection."""
+                   name=None,
+                   cache=None,
+                   decode_loop_step=None):
+  """Hidden layer with RELU activation followed by linear projection.
+
+  Args:
+    inputs: A tensor.
+    filter_size: An integer.
+    output_size: An integer.
+    first_kernel_size: An integer.
+    second_kernel_size: An integer.
+    padding: A string.
+    nonpadding_mask: A tensor.
+    dropout: A float.
+    name: A string.
+    cache: A dict, containing Tensors which are the results of previous
+        attentions, used for fast decoding.
+    decode_loop_step: An integer, step number of the decoding loop.
+        Only used for inference on TPU. If it is not None, the function
+        will do inplace update for the cache instead of concatenating the
+        current result to the cache.
+
+  Returns:
+    A Tensor.
+  """
   with tf.variable_scope(name, "conv_relu_conv", [inputs]):
-    inputs = maybe_zero_out_padding(
-        inputs, first_kernel_size, nonpadding_mask)
-    h = tpu_conv1d(inputs, filter_size, first_kernel_size, padding=padding,
-                   name="conv1")
+    inputs = maybe_zero_out_padding(inputs, first_kernel_size, nonpadding_mask)
+
+    if cache:
+      if decode_loop_step is None:
+        inputs = cache["f"] = tf.concat([cache["f"], inputs], axis=1)
+      else:
+        # Inplace update is required for inference on TPU.
+        # Inplace_ops only supports inplace_update on the first dimension.
+        # The performance of current implementation is better than updating
+        # the tensor by adding the result of matmul(one_hot,
+        # update_in_current_step)
+        tmp_f = tf.transpose(cache["f"], perm=[1, 0, 2])
+        tmp_f = tf_inplace_ops().alias_inplace_update(
+            tmp_f,
+            decode_loop_step * tf.shape(inputs)[1],
+            tf.transpose(inputs, perm=[1, 0, 2]))
+        inputs = cache["f"] = tf.transpose(tmp_f, perm=[1, 0, 2])
+      inputs = cache["f"] = inputs[:, -first_kernel_size:, :]
+
+    h = tpu_conv1d(
+        inputs, filter_size, first_kernel_size, padding=padding, name="conv1")
+
+    if cache:
+      h = h[:, -1:, :]
+
     h = tf.nn.relu(h)
     if dropout != 0.0:
       h = tf.nn.dropout(h, 1.0 - dropout)
     h = maybe_zero_out_padding(h, second_kernel_size, nonpadding_mask)
-    return tpu_conv1d(h, output_size, second_kernel_size, padding=padding,
-                      name="conv2")
+    return tpu_conv1d(
+        h, output_size, second_kernel_size, padding=padding, name="conv2")
 
 
 def sepconv_relu_sepconv(inputs,
@@ -1367,16 +1591,19 @@ def sepconv_relu_sepconv(inputs,
                          name=None):
   """Hidden layer with RELU activation followed by linear projection."""
   with tf.variable_scope(name, "sepconv_relu_sepconv", [inputs]):
-    inputs = maybe_zero_out_padding(
-        inputs, first_kernel_size, nonpadding_mask)
+    inputs = maybe_zero_out_padding(inputs, first_kernel_size, nonpadding_mask)
     if inputs.get_shape().ndims == 3:
       is_3d = True
       inputs = tf.expand_dims(inputs, 2)
     else:
       is_3d = False
     h = separable_conv(
-        inputs, filter_size, first_kernel_size, activation=tf.nn.relu,
-        padding=padding, name="conv1")
+        inputs,
+        filter_size,
+        first_kernel_size,
+        activation=tf.nn.relu,
+        padding=padding,
+        name="conv1")
     if dropout != 0.0:
       h = tf.nn.dropout(h, 1.0 - dropout)
     h = maybe_zero_out_padding(h, second_kernel_size, nonpadding_mask)
@@ -1449,6 +1676,38 @@ def conv_gru(x,
     return gate * x + (1 - gate) * candidate
 
 
+def gru_feedfwd(a_t, h_prev, filters, name=None):
+  """position-wise Feed-fwd GRU gates following the MPNN.
+
+  Args:
+    a_t: Tensor of shape [batch, length, depth] of current input
+    h_prev: Tensor of shape [batch, length, depth] of prev input
+    filters: an integer specifying number of dimensions of the filters
+    name: A string
+  Returns:
+    h_t: [batch, length, filters] hidden state
+  """
+
+  with tf.variable_scope(name, default_name="GRU", values=[a_t, h_prev]):
+    # we use right matrix multiplication to handle batches
+    # W_z and W_r have shape 2d, d. U_z U_r have shape d,d
+    z_t = (
+        tf.sigmoid(
+            tpu_conv1d(a_t, filters, 1, padding="SAME", name="W_z") +
+            tpu_conv1d(h_prev, filters, 1, padding="SAME", name="U_z")))
+    r_t = (
+        tf.sigmoid(
+            tpu_conv1d(a_t, filters, 1, padding="SAME", name="W_r") +
+            tpu_conv1d(h_prev, filters, 1, padding="SAME", name="U_r")))
+    h_tilde = (
+        tf.tanh(
+            tpu_conv1d(a_t, filters, 1, padding="SAME", name="W") +
+            tpu_conv1d(r_t * h_prev, filters, 1, padding="SAME", name="U")))
+    h_t = (1. - z_t) * h_prev + z_t * h_tilde
+
+  return h_t
+
+
 def conv_lstm(x,
               kernel_size,
               filters,
@@ -1519,6 +1778,9 @@ def pad_to_same_length(x, y, final_length_divisible_by=1, axis=1):
   with tf.name_scope("pad_to_same_length", values=[x, y]):
     x_length = shape_list(x)[axis]
     y_length = shape_list(y)[axis]
+    if (isinstance(x_length, int) and isinstance(y_length, int) and
+        x_length == y_length and final_length_divisible_by == 1):
+      return x, y
     max_length = tf.maximum(x_length, y_length)
     if final_length_divisible_by > 1:
       # Find the nearest larger-or-equal integer divisible by given number.
@@ -1553,7 +1815,7 @@ def pad_with_zeros(logits, labels):
   """Pad labels on the length dimension to match logits length."""
   with tf.name_scope("pad_with_zeros", values=[logits, labels]):
     logits, labels = pad_to_same_length(logits, labels)
-    if len(labels.shape.as_list()) == 3:  # 2-d labels.
+    if len(labels.shape) == 3:  # 2-d labels.
       logits, labels = pad_to_same_length(logits, labels, axis=2)
     return logits, labels
 
@@ -1619,6 +1881,7 @@ def padded_cross_entropy(logits,
                          label_smoothing,
                          weights_fn=weights_nonzero,
                          reduce_sum=True,
+                         cutoff=0.0,
                          gaussian=False):
   """Compute cross-entropy assuming 0s are padding.
 
@@ -1632,7 +1895,8 @@ def padded_cross_entropy(logits,
     label_smoothing: a floating point `Scalar`.
     weights_fn: A function from labels to weights.
     reduce_sum: a Boolean, whether to sum at the end or not.
-    gaussian: If true, use a gaussian distribution for label smoothing
+    cutoff: a float, at which point to have no loss.
+    gaussian: If true, use a Gaussian distribution for label smoothing
 
   Returns:
     loss_numerator: a `Scalar`.  Sum of losses.
@@ -1652,21 +1916,235 @@ def padded_cross_entropy(logits,
         weights_fn=weights_fn,
         reduce_sum=reduce_sum)
   confidence = 1.0 - label_smoothing
-  vocab_size = shape_list(logits)[-1]
+  logits_shape = shape_list(logits)
+  vocab_size = logits_shape[-1]
   with tf.name_scope("padded_cross_entropy", values=[logits, labels]):
-    if len(logits.get_shape().as_list()) == 2:
+    if len(logits_shape) == 2:
       # Deal with the case where we did not insert extra dimensions due to
       # TPU issues.  No pad-to-same-length happens in this case.
       # TODO(noam): remove this logic once TPU can handle extra dimensions.
       labels = tf.reshape(labels, [-1])
     else:
       logits, labels = pad_with_zeros(logits, labels)
-    xent = smoothing_cross_entropy(logits, labels, vocab_size, confidence,
-                                   gaussian=gaussian)
+    logits = tf.reshape(
+        logits,
+        shape_list(labels) + [vocab_size],
+        name="padded_cross_entropy_size_check")
+    logits = tf.cast(logits, tf.float32)
+    xent = smoothing_cross_entropy(
+        logits, labels, vocab_size, confidence, gaussian=gaussian)
     weights = weights_fn(labels)
+    if cutoff > 0.0:
+      xent = tf.nn.relu(xent - cutoff)
     if not reduce_sum:
       return xent * weights, weights
     return tf.reduce_sum(xent * weights), tf.reduce_sum(weights)
+
+
+def _weights_one_third(labels):
+  """Returns Tensor of shape [batch, height, width]. Each element is 1/3."""
+  return tf.ones(tf.shape(labels)[:-1]) / 3.
+
+
+def dml_loss(pred,
+             labels,
+             weights_fn=_weights_one_third,
+             reduce_sum=True):
+  """Discretized mixture of logistics loss.
+
+  Args:
+    pred: A [batch, height, width, num_mixtures*10] tensor of floats
+      comprising one unconstrained mixture probability, three means
+      (one per channel), three standard deviations (one per channel),
+      and three coefficients which linearly parameterize dependence across
+      channels.
+    labels: A [batch, height, width, channels] tensor of 8-bit pixel
+      intensities. The computation assumes channels is 3.
+    weights_fn: A function of labels, returning a Tensor of shape
+      [batch, height, width] which weights each loss term. Default is to scale
+      each loss term by 1/3 so that they capture the average across channels.
+    reduce_sum: A boolean, to return scalar loss instead of per position.
+
+  Returns:
+    Tuple of loss tensors for numerator and denominator, each a scalar if
+    reduce_sum else of shape [batch, height, width]. The sum of their divisions
+    is the number of nats for each pixel in labels.
+  """
+  real_labels = convert_rgb_to_symmetric_real(labels)
+  dml_loss_value = discretized_mix_logistic_loss(pred=pred, labels=real_labels)
+  weights = weights_fn(labels)
+  loss_num = weights * dml_loss_value
+  loss_den = weights_nonzero(weights)
+  if reduce_sum:
+    loss_num = tf.reduce_sum(loss_num)
+    loss_den = tf.reduce_sum(loss_den)
+  return loss_num, loss_den
+
+
+def split_to_discretized_mix_logistic_params(inputs):
+  """Splits input tensor into parameters of discretized mixture logistic.
+
+  Args:
+    inputs: A [batch, height, width, num_mixtures*10] tensor of floats
+      comprising one unconstrained mixture probability, three means
+      (one per channel), three standard deviations (one per channel),
+      and three coefficients which linearly parameterize dependence across
+      channels.
+
+  Returns:
+    Tuple of unconstrained mixture probabilities, locations, scales, and
+    coefficient parameters of the distribution. The mixture probability has
+    shape [batch, height, width, num_mixtures]. Other parameters have shape
+    [batch, height, width, num_mixtures, 3].
+  """
+  batch, height, width, output_dim = shape_list(inputs)
+  num_mixtures = output_dim // 10
+  logits, locs, log_scales, coeffs = tf.split(
+      inputs,
+      num_or_size_splits=[
+          num_mixtures, num_mixtures * 3, num_mixtures * 3, num_mixtures * 3
+      ],
+      axis=-1)
+  split_shape = [batch, height, width, num_mixtures, 3]
+  locs = tf.reshape(locs, split_shape)
+  log_scales = tf.reshape(log_scales, split_shape)
+  log_scales = tf.maximum(log_scales, -7.)
+  coeffs = tf.reshape(coeffs, split_shape)
+  coeffs = tf.tanh(coeffs)
+  return logits, locs, log_scales, coeffs
+
+
+def discretized_mix_logistic_loss(pred, labels):
+  """Computes negative log probability for the discretized mixture of logistics.
+
+  The distribution of a whole pixel is a mixture of 3-dimensional discretized
+  logistic distributions. The 3-D discretized logistic factorizes as 3 1-D
+  discretized logistic distributions, one for each channel. It defines
+
+  ```none
+  P(X = x)
+  = sum_{k=1}^K probs[k] * P(X = x | locs[k], scales[k])
+  = sum_{k=1}^K probs[k] * [
+      prod_{c=1}^3 DiscretizedLogistic(X[c] = x[c] | means[k][c], scales[k]) ]
+  ```
+
+  The means tensor is a linear combination of location parameters and previous
+  channels. The discretized logistic distribution assigns probability mass to an
+  event P(X=x) via logistic CDFs: P(X <= x + 0.5) - P(X > x - 0.5) for 1 < x <
+  254; P(X <= 0.5) for x = 0; and 1 - P(X > 245.5) for x = 255. Instead of
+  8-bit inputs, this implementation assumes the events are rescaled to [-1, 1].
+
+  Args:
+    pred: A [batch, height, width, num_mixtures*10] tensor of floats
+      comprising one unconstrained mixture probability, three means
+      (one per channel), three standard deviations (one per channel),
+      and three coefficients which linearly parameterize dependence across
+      channels.
+    labels: A [batch, height, width, channels] tensor of true pixel intensities
+      rescaled to [-1, 1]. The computation assumes channels is 3.
+
+  Returns:
+    A [batch, height, width] tensor of the negative log conditional probability
+    of each pixel given all previous pixels.
+  """
+
+  logits, locs, log_scales, coeffs = split_to_discretized_mix_logistic_params(
+      pred)
+
+  # Tile labels to broadcast compute across the mixture dimension.
+  batch, height, width, num_mixtures = shape_list(logits)
+  labels = tf.tile(
+      tf.reshape(labels, [batch, height, width, 1, 3]),
+      [1, 1, 1, num_mixtures, 1])
+
+  # p(x) = sigmoid((x - means_i + 1/255.)/scale_i) -
+  #        sigmoid((x - means_i - 1/255.)/scale_i)
+  # for each channel i. The means are linearly parameterized.
+  means_0 = locs[..., 0]
+  means_1 = locs[..., 1] + coeffs[..., 0] * labels[..., 0]
+  means_2 = (
+      locs[..., 2] + coeffs[..., 1] * labels[..., 0] +
+      coeffs[..., 2] * labels[..., 1])
+  means = tf.stack([means_0, means_1, means_2], axis=-1)
+  centered_labels = labels - means
+  inv_stdv = tf.exp(-log_scales)
+  plus_in = inv_stdv * (centered_labels + 1. / 255.)
+  min_in = inv_stdv * (centered_labels - 1. / 255.)
+  cdf_plus = tf.nn.sigmoid(plus_in)
+  cdf_min = tf.nn.sigmoid(min_in)
+
+  # Compute log probability for edge case of 0 (before scaling), 255 (before
+  # scaling), and all other cases respectively.
+  log_prob_0 = plus_in - tf.nn.softplus(plus_in)
+  log_prob_255 = -tf.nn.softplus(min_in)
+  prob_event = tf.maximum(cdf_plus - cdf_min, 1e-12)
+  log_prob_event = tf.log(prob_event)
+
+  # Robustly select log-prob based on numerical edge-cases: (a) [-1, -1+eps);
+  # (b) (1-eps, 1]; (c) NaNs during `tf.gradients` of `tf.select`, which may
+  # cause `tf.log(0.)`; (d) p(x) < 1e-5.
+  mid_in = inv_stdv * centered_labels
+  log_prob_event_approx = (
+      mid_in - log_scales - 2. * tf.nn.softplus(mid_in) - np.log(127.5))
+  log_probs = tf.where(
+      labels < -0.999, log_prob_0,
+      tf.where(
+          labels > 0.999, log_prob_255,
+          tf.where(prob_event > 1e-5, log_prob_event, log_prob_event_approx)))
+
+  # Sum over channels and compute log-probability of each mixture.
+  log_probs = tf.reduce_sum(log_probs, -1) + tf.nn.log_softmax(logits, axis=-1)
+  output = -tf.reduce_logsumexp(log_probs, axis=-1)
+  return output
+
+
+def sample_from_discretized_mix_logistic(pred, seed=None):
+  """Sampling from a discretized mixture of logistics.
+
+  Args:
+    pred: A [batch, height, width, num_mixtures*10] tensor of floats
+      comprising one unconstrained mixture probability, three means
+      (one per channel), three standard deviations (one per channel),
+      and three coefficients which linearly parameterize dependence across
+      channels.
+    seed: Random seed.
+
+  Returns:
+    A tensor of shape [batch, height, width, 3] with real intensities scaled
+    between -1 and 1.
+  """
+
+  logits, locs, log_scales, coeffs = split_to_discretized_mix_logistic_params(
+      pred)
+
+  # Sample mixture indicator given logits using the gumbel max trick.
+  num_mixtures = shape_list(logits)[-1]
+  gumbel_noise = -tf.log(-tf.log(
+      tf.random_uniform(
+          tf.shape(logits), minval=1e-5, maxval=1. - 1e-5, seed=seed)))
+  sel = tf.one_hot(
+      tf.argmax(logits + gumbel_noise, -1),
+      depth=num_mixtures,
+      dtype=tf.float32)
+
+  # Select mixture component's parameters.
+  sel = tf.expand_dims(sel, -1)
+  locs = tf.reduce_sum(locs * sel, 3)
+  log_scales = tf.reduce_sum(log_scales * sel, 3)
+  coeffs = tf.reduce_sum(coeffs * sel, 3)
+
+  # Sample from 3-D logistic & clip to interval. Note we don't round to the
+  # nearest 8-bit value when sampling.
+  uniform_noise = tf.random_uniform(
+      tf.shape(locs), minval=1e-5, maxval=1. - 1e-5, seed=seed)
+  logistic_noise = tf.log(uniform_noise) - tf.log(1. - uniform_noise)
+  x = locs + tf.exp(log_scales) * logistic_noise
+  x0 = x[..., 0]
+  x1 = x[..., 1] + coeffs[..., 0] * x0
+  x2 = x[..., 2] + coeffs[..., 1] * x0 + coeffs[..., 2] * x1
+  x = tf.stack([x0, x1, x2], axis=-1)
+  x = tf.clip_by_value(x, -1., 1.)
+  return x
 
 
 def smoothing_cross_entropy(logits,
@@ -1677,16 +2155,16 @@ def smoothing_cross_entropy(logits,
   """Cross entropy with label smoothing to limit over-confidence.
 
   Args:
-    logits: Tensor of size [batch_size, ?, ?, ?, vocab_size]
-    labels: Tensor of size [batch_size, ?, ?, ?]
+    logits: Tensor of shape [batch_size, ?, ?, ?, vocab_size].
+    labels: Tensor of shape [batch_size, ?, ?, ?].
     vocab_size: Tensor representing the size of the vocabulary.
     confidence: Used to determine on and off values for label smoothing.
-      If `gaussian` is true, `confidence` is the variance to the gaussian
+      If `gaussian` is true, `confidence` is the variance to the Gaussian
       distribution.
-    gaussian: Uses a gaussian distribution for label smoothing
+    gaussian: Uses a Gaussian distribution for label smoothing
 
   Returns:
-
+    Tensor of shape [batch_size, ?, ?, ?].
   """
   with tf.name_scope("smoothing_cross_entropy", values=[logits, labels]):
     # Low confidence is given to all non-true labels, uniformly.
@@ -1713,7 +2191,7 @@ def smoothing_cross_entropy(logits,
           depth=vocab_size,
           on_value=confidence,
           off_value=low_confidence)
-    xentropy = tf.nn.softmax_cross_entropy_with_logits(
+    xentropy = tf.nn.softmax_cross_entropy_with_logits_v2(
         logits=logits, labels=soft_targets)
     return xentropy - normalizing
 
@@ -1725,15 +2203,15 @@ def global_pool_1d(inputs, pooling_type="MAX", mask=None):
   to get a representation of a set.
 
   Args:
-    inputs: A tensor of dimensions batch_size x sequence_length x input_dims
+    inputs: A tensor of shape [batch_size, sequence_length, input_dims]
       containing the sequences of input vectors.
     pooling_type: the pooling type to use, MAX or AVR
-    mask: A tensor of dimensions batch_size x sequence_length containing a
+    mask: A tensor of shape [batch_size, sequence_length] containing a
       mask for the inputs with 1's for existing elements, and 0's elsewhere.
 
   Returns:
-    output: A tensor of dimensions batch_size x input_dims
-      dimension containing the sequences of transformed vectors.
+    A tensor of shape [batch_size, input_dims] containing the sequences of
+    transformed vectors.
   """
   with tf.name_scope("global_pool", values=[inputs]):
     if mask is not None:
@@ -1747,7 +2225,7 @@ def global_pool_1d(inputs, pooling_type="MAX", mask=None):
       if mask is not None:
         # Some elems are dummy elems so we can't just reduce the average.
         output = tf.reduce_sum(inputs, axis=1)
-        num_elems = tf.reduce_sum(mask, axis=1, keep_dims=True)
+        num_elems = tf.reduce_sum(mask, axis=1, keepdims=True)
         output = tf.div(output, tf.maximum(num_elems, 1))
       else:
         output = tf.reduce_mean(inputs, axis=1)
@@ -1763,13 +2241,13 @@ def running_global_pool_1d(inputs, pooling_type="MAX"):
   Currently only supports maximum. Equivalent to using a lower triangle bias.
 
   Args:
-    inputs: A tensor of dimensions batch_size x sequence_length x input_dims
+    inputs: A tensor of shape [batch_size, sequence_length, input_dims]
       containing the sequences of input vectors.
     pooling_type: Pooling type to use. Currently only supports 'MAX'.
 
   Returns:
-    output: A tensor of dimensions batch_size x sequence_length x input_dims
-      dimension containing the running 'totals'.
+    A tensor of shape [batch_size, sequence_length, input_dims] containing the
+    running 'totals'.
   """
   del pooling_type
   with tf.name_scope("running_global_pool", values=[inputs]):
@@ -1795,15 +2273,164 @@ def gated_linear_unit_layer(x, name=None):
     name: A string
 
   Returns:
-    x: A tensor
+    A tensor of the same shape as x.
   """
-
-  with tf.variable_scope(
-      name, default_name="glu_layer", values=[x]):
+  with tf.variable_scope(name, default_name="glu_layer", values=[x]):
     depth = shape_list(x)[-1]
     x = tf.layers.dense(x, depth * 2, activation=None)
     x, gating_x = tf.split(x, 2, axis=-1)
     return x * tf.nn.sigmoid(gating_x)
+
+
+def sru_with_scan(x,
+                  num_layers=2,
+                  activation=None,
+                  initial_state=None,
+                  name=None,
+                  reuse=None):
+  """SRU cell as in https://arxiv.org/abs/1709.02755.
+
+  This implementation uses tf.scan and can incur overhead, see the full SRU
+  function doc for details and an implementation that is sometimes faster.
+
+  Args:
+    x: A tensor of shape [batch, ..., channels] ; ... is treated as time.
+    num_layers: How many SRU layers; default is 2 as results for 1 disappoint.
+    activation: Optional activation function, try tf.nn.tanh or tf.nn.relu.
+    initial_state: Optional initial c-state, set to zeros if None.
+    name: Optional name, "sru" by default.
+    reuse: Optional reuse.
+
+  Returns:
+    A tensor of the same shape as x.
+
+  Raises:
+    ValueError: if num_layers is not positive.
+  """
+  if num_layers < 1:
+    raise ValueError("Number of layers must be positive: %d" % num_layers)
+  with tf.variable_scope(name, default_name="sru", values=[x], reuse=reuse):
+    # We assume x is [batch, ..., channels] and treat all ... as time.
+    x_shape = shape_list(x)
+    x = tf.reshape(x, [x_shape[0], -1, x_shape[-1]])
+    x = tf.transpose(x, [1, 0, 2])  # Scan assumes time on axis 0.
+    initial_state = initial_state or tf.zeros([x_shape[0], x_shape[-1]])
+
+    # SRU state manipulation function.
+    def next_state(cur_state, args_tup):
+      cur_x_times_one_minus_f, cur_f = args_tup
+      return cur_f * cur_state + cur_x_times_one_minus_f
+
+    # Calculate SRU on each layer.
+    for i in range(num_layers):
+      # The parallel part of the SRU.
+      x_orig = x
+      x, f, r = tf.split(
+          tf.layers.dense(x, 3 * x_shape[-1], name="kernel_%d" % i), 3, axis=-1)
+      f, r = tf.sigmoid(f), tf.sigmoid(r)
+      x_times_one_minus_f = x * (1.0 - f)  # Compute in parallel for speed.
+      # Calculate states.
+      c_states = tf.scan(
+          next_state, (x_times_one_minus_f, f),
+          initializer=initial_state,
+          parallel_iterations=2,
+          name="scan_%d" % i)
+      # Final output.
+      if activation is not None:
+        c_states = activation(c_states)
+      h = c_states * r + (1.0 - r) * x_orig
+      x = h  # Next layer.
+    # Transpose back to batch-major.
+    x = tf.transpose(x, [1, 0, 2])
+    return tf.reshape(x, x_shape)
+
+
+class CumsumprodCell(object):
+  """Cumulative sum and product object for use with functional_rnn API."""
+
+  def __init__(self, initializer):
+    self._initializer = initializer
+
+  @property
+  def output_size(self):
+    return int(shape_list(self._initializer)[-1])
+
+  def zero_state(self, batch_size, dtype):
+    dtype = dtype or tf.float32
+    return tf.zeros([batch_size, self.output_size], dtype=dtype)
+
+  def __call__(self, inputs_t, state_t):
+    cur_x_times_one_minus_f, cur_f = tf.split(inputs_t, 2, axis=-1)
+    state_next = cur_f * state_t + cur_x_times_one_minus_f
+    outputs_t = state_next
+    return outputs_t, state_next
+
+
+def sru(x,
+        num_layers=2,
+        activation=None,
+        initial_state=None,
+        name=None,
+        reuse=None):
+  """SRU cell as in https://arxiv.org/abs/1709.02755.
+
+  As defined in the paper:
+  (1) x'_t = W x_t
+  (2) f_t = sigmoid(Wf x_t + bf)
+  (3) r_t = sigmoid(Wr x_t + br)
+  (4) c_t = f_t * c_{t-1} + (1 - f_t) * x'_t
+  (5) h_t = r_t * activation(c_t) + (1 - r_t) * x_t
+
+  This version uses functional ops to be faster on GPUs with TF-1.9+.
+
+  Args:
+    x: A tensor of shape [batch, ..., channels] ; ... is treated as time.
+    num_layers: How many SRU layers; default is 2 as results for 1 disappoint.
+    activation: Optional activation function, try tf.nn.tanh or tf.nn.relu.
+    initial_state: Optional initial c-state, set to zeros if None.
+    name: Optional name, "sru" by default.
+    reuse: Optional reuse.
+
+  Returns:
+    A tensor of the same shape as x.
+
+  Raises:
+    ValueError: if num_layers is not positive.
+  """
+  if num_layers < 1:
+    raise ValueError("Number of layers must be positive: %d" % num_layers)
+  if is_on_tpu():  # On TPU the XLA does a good job with while.
+    return sru_with_scan(x, num_layers, activation, initial_state, name, reuse)
+  try:
+    from tensorflow.contrib.recurrent.python.ops import functional_rnn  # pylint: disable=g-import-not-at-top
+  except ImportError:
+    tf.logging.info("functional_rnn not found, using sru_with_scan instead")
+    return sru_with_scan(x, num_layers, activation, initial_state, name, reuse)
+
+  with tf.variable_scope(name, default_name="sru", values=[x], reuse=reuse):
+    # We assume x is [batch, ..., channels] and treat all ... as time.
+    x_shape = shape_list(x)
+    x = tf.reshape(x, [x_shape[0], -1, x_shape[-1]])
+    initial_state = initial_state or tf.zeros([x_shape[0], x_shape[-1]])
+    cell = CumsumprodCell(initial_state)
+    # Calculate SRU on each layer.
+    for i in range(num_layers):
+      # The parallel part of the SRU.
+      x_orig = x
+      x, f, r = tf.split(
+          tf.layers.dense(x, 3 * x_shape[-1], name="kernel_%d" % i), 3, axis=-1)
+      f, r = tf.sigmoid(f), tf.sigmoid(r)
+      x_times_one_minus_f = x * (1.0 - f)  # Compute in parallel for speed.
+      # Calculate states.
+      concat = tf.concat([x_times_one_minus_f, f], axis=-1)
+      c_states, _ = functional_rnn.functional_rnn(
+          cell, concat, time_major=False)
+      # Final output.
+      if activation is not None:
+        c_states = activation(c_states)
+      h = c_states * r + (1.0 - r) * x_orig
+      x = h  # Next layer.
+    return tf.reshape(x, x_shape)
 
 
 def linear_set_layer(layer_size,
@@ -1823,17 +2450,17 @@ def linear_set_layer(layer_size,
 
   Args:
     layer_size: Dimension to transform the input vectors to.
-    inputs: A tensor of dimensions batch_size x sequence_length x input_dims
+    inputs: A tensor of shape [batch_size, sequence_length, input_dims]
       containing the sequences of input vectors.
-    context: A tensor of dimensions batch_size x context_dims
-      containing a global statistic about the set.
+    context: A tensor of shape [batch_size, context_dims] containing a global
+      statistic about the set.
     activation_fn: The activation function to use.
     dropout: Dropout probability.
     name: name.
 
   Returns:
-    output: A tensor of dimensions batch_size x sequence_length x output_dims
-      dimension containing the sequences of transformed vectors.
+    Tensor of shape [batch_size, sequence_length, output_dims] containing the
+    sequences of transformed vectors.
   """
   with tf.variable_scope(
       name, default_name="linear_set_layer", values=[inputs]):
@@ -1869,13 +2496,13 @@ def ravanbakhsh_set_layer(layer_size,
                           name=None):
   """Layer from Deep Sets paper: https://arxiv.org/abs/1611.04500 .
 
-  More parameter-efficient verstion of a linear-set-layer with context.
+  More parameter-efficient version of a linear-set-layer with context.
 
   Args:
     layer_size: Dimension to transform the input vectors to.
-    inputs: A tensor of dimensions batch_size x sequence_length x vector
+    inputs: A tensor of shape [batch_size, sequence_length, vector]
       containing the sequences of input vectors.
-    mask: A tensor of dimensions batch_size x sequence_length containing a
+    mask: A tensor of shape [batch_size, sequence_length] containing a
       mask for the inputs with 1's for existing elements, and 0's elsewhere.
     sequential: If true, will use a running global pool so each element will
       only depend on those before it. Set true if this layer is being used in
@@ -1885,8 +2512,8 @@ def ravanbakhsh_set_layer(layer_size,
     name: name.
 
   Returns:
-    output: A tensor of dimensions batch_size x sequence_length x vector
-      dimension containing the sequences of transformed vectors.
+    Tensor of shape [batch_size, sequence_length, vector] containing the
+    sequences of transformed vectors.
   """
   del dropout
   with tf.variable_scope(name, "ravanbakhsh_set_layer", [inputs]):
@@ -1922,7 +2549,7 @@ def fn_device_dependency(name, device=""):
       assert outs
 
       deps = outs
-      if isinstance(outs[0], list) or isinstance(outs[0], tuple):
+      if isinstance(outs[0], (list, tuple)):
         assert len(outs) == 1
         deps = outs[0]
       fn_device_dependency_dict()[key] = deps
@@ -1963,7 +2590,7 @@ def underlying_variable(t):
     t: a Tensor
 
   Returns:
-    a tf.Varaible object.
+    tf.Variable.
   """
   t = underlying_variable_ref(t)
   assert t is not None
@@ -1988,7 +2615,7 @@ def approximate_split(x, num_splits, axis=0):
     a list of num_splits Tensors.
   """
   size = shape_list(x)[axis]
-  size_splits = [tf.div(size + i, num_splits) for i in xrange(num_splits)]
+  size_splits = [tf.div(size + i, num_splits) for i in range(num_splits)]
   return tf.split(x, size_splits, axis=axis)
 
 
@@ -2027,8 +2654,8 @@ class FactoredTensor(object):
     product = tf.matmul(flat_a, self.b, transpose_b=True)
     product_shape = a_shape[:-1] + [result_dim]
     product = tf.reshape(product, product_shape)
-    product.set_shape(
-        self.a.get_shape().as_list()[:-1] + [self.b.get_shape()[0]])
+    product.set_shape(self.a.get_shape().as_list()[:-1] +
+                      [self.b.get_shape()[0]])
     return product
 
 
@@ -2055,7 +2682,7 @@ def smoothing_cross_entropy_factored_grad(op, dy):
   b_grad = None
   a_grad_parts = []
   deps = []
-  for part in xrange(num_splits):
+  for part in range(num_splits):
     with tf.control_dependencies(deps):
       logits = tf.matmul(a[part], b, transpose_b=True)
       output_part = smoothing_cross_entropy(logits, labels[part], vocab_size,
@@ -2096,7 +2723,7 @@ def smoothing_cross_entropy_factored(a, b, labels, confidence):
   labels = approximate_split(labels, num_splits)
   a = approximate_split(a, num_splits)
   parts = []
-  for part in xrange(num_splits):
+  for part in range(num_splits):
     with tf.control_dependencies(parts[-1:]):
       logits = tf.matmul(a[part], b, transpose_b=True)
       parts.append(
@@ -2196,7 +2823,7 @@ def _fn_with_custom_grad(fn, inputs, grad_fn, use_global_vars=False):
   if grad_fn is None:
     return outputs
 
-  if not (isinstance(outputs, tuple) or isinstance(outputs, list)):
+  if not isinstance(outputs, (tuple, list)):
     outputs = [outputs]
   outputs = list(outputs)
 
@@ -2224,7 +2851,7 @@ def _fn_with_custom_grad(fn, inputs, grad_fn, use_global_vars=False):
 
   @function.Defun(
       *(in_types + var_types + out_types),
-      func_name="identity_custom_grad%d" % random.randint(1, 10**9),
+      func_name="identity_custom_grad%d" % ops.uid(),
       python_grad_func=custom_grad_fn,
       shape_func=lambda _: [t.get_shape() for t in outputs])
   def identity(*args):
@@ -2272,7 +2899,7 @@ def conv_hidden_relu_memory_efficient(x,
     x_flat = tf.reshape(x, [-1, 1, shape_list(x)[2]])
     xs = approximate_split(x_flat, num_splits)
     ys = []
-    for i in xrange(num_splits):
+    for i in range(num_splits):
       with tf.control_dependencies(ys[-1:]):
         n = layer_norm_compute_python(xs[i], epsilon, scale, bias)
         y = tf.nn.conv1d(n, f1, 1, "SAME")
@@ -2292,6 +2919,7 @@ def conv_hidden_relu_memory_efficient(x,
 
     @function.Defun(compiled=True)
     def grad_fn(x, f1, f2, scale, bias, dy):
+      """Gradient for efficiency."""
       with tf.control_dependencies([dy]):
         num_splits = 4
         x_shape = shape_list(x)
@@ -2306,7 +2934,7 @@ def conv_hidden_relu_memory_efficient(x,
         dscale = 0
         dbias = 0
         deps = []
-        for i in xrange(num_splits):
+        for i in range(num_splits):
           with tf.control_dependencies(deps):
             n = layer_norm_compute_python(xs[i], epsilon, scale, bias)
             y = tf.nn.conv1d(n, f1, 1, "SAME")
@@ -2360,12 +2988,19 @@ def shape_list(x):
   shape = tf.shape(x)
 
   ret = []
-  for i in xrange(len(static)):
+  for i in range(len(static)):
     dim = static[i]
     if dim is None:
       dim = shape[i]
     ret.append(dim)
   return ret
+
+
+def list_product(els):
+  prod = els[0]
+  for el in els[1:]:
+    prod *= el
+  return prod
 
 
 def sample_with_temperature(logits, temperature):
@@ -2379,7 +3014,10 @@ def sample_with_temperature(logits, temperature):
     a Tensor with one fewer dimension than logits.
   """
   if temperature == 0.0:
-    return tf.argmax(logits, -1)
+    # TF argmax doesn't handle >5 dimensions, so we reshape here.
+    logits_shape = shape_list(logits)
+    argmax = tf.argmax(tf.reshape(logits, [-1, logits_shape[-1]]), axis=1)
+    return tf.reshape(argmax, logits_shape[:-1])
   else:
     assert temperature > 0.0
     reshaped_logits = (
@@ -2405,9 +3043,9 @@ def ones_matrix_band_part(rows, cols, num_lower, num_upper, out_shape=None):
       band = band.reshape(out_shape)
     band = tf.constant(band, tf.float32)
   else:
-    band = tf.matrix_band_part(tf.ones([rows, cols]),
-                               tf.cast(num_lower, tf.int64),
-                               tf.cast(num_upper, tf.int64))
+    band = tf.matrix_band_part(
+        tf.ones([rows, cols]), tf.cast(num_lower, tf.int64),
+        tf.cast(num_upper, tf.int64))
     if out_shape:
       band = tf.reshape(band, out_shape)
 
@@ -2417,133 +3055,9 @@ def ones_matrix_band_part(rows, cols, num_lower, num_upper, out_shape=None):
 def reshape_like_all_dims(a, b):
   """Reshapes a to match the shape of b."""
   ret = tf.reshape(a, tf.shape(b))
-  if not tfe_context.in_eager_mode():
+  if not tf.contrib.eager.in_eager_mode():
     ret.set_shape(b.get_shape())
   return ret
-
-
-def reduce_by_device(parallelism, data, reduce_fn):
-  """Reduces data per device.
-
-  This can be useful, for example, if we want to all-reduce n tensors on k<n
-  devices (like during eval when we have only one device).  We call
-  reduce_by_device() to first sum the tensors per device, then call our usual
-  all-reduce operation to create one sum per device, followed by
-  expand_by_device, to create the appropriate number of pointers to these
-  results.  See all_reduce_ring() below for an example of how this is used.
-
-  Args:
-    parallelism: a expert_utils.Parallelism object
-    data: a list of Tensors with length parallelism.n
-    reduce_fn: a function taking a list of Tensors.  e.g. tf.add_n
-
-  Returns:
-    device_parallelism: a Parallelism object with each device listed only once.
-    reduced_data: A list of Tensors, one per device.
-  """
-  unique_devices = []
-  device_to_data = {}
-  for dev, datum in zip(parallelism.devices, data):
-    if dev not in device_to_data:
-      unique_devices.append(dev)
-      device_to_data[dev] = [datum]
-    else:
-      device_to_data[dev].append(datum)
-  device_parallelism = eu.Parallelism(unique_devices)
-  grouped_data = [device_to_data[dev] for dev in unique_devices]
-  return device_parallelism, device_parallelism(reduce_fn, grouped_data)
-
-
-def expand_by_device(original_parallelism, device_parallelism, data):
-  """Opposite of reduce_by_device().
-
-  Args:
-    original_parallelism: a expert_utils.Parallelism object.
-    device_parallelism: a expert_utils.Parallelism object.
-    data: a list of tensors with length device_parallelism.n
-
-  Returns:
-    a list of Tensors with length original_parallelism.n
-  """
-  device_to_datum = {
-      device_parallelism.devices[i]: data[i]
-      for i in xrange(device_parallelism.n)}
-  return [device_to_datum[d] for d in original_parallelism.devices]
-
-
-def all_reduce_ring(x, parallelism, maybe_reduce=True, use_bfloat16=True):
-  """Compute the sum of all Tensors and put the result everywhere.
-
-  Assumes that the devices are connected in a ring.
-
-  Args:
-    x: a list of Tensors with length parallelism.n
-    parallelism: a expert_utils.Parallelism object.
-    maybe_reduce: a boolean - first reduce per device.
-    use_bfloat16: a boolean - saves bandwidth but loses precision
-
-  Returns:
-    a list of Tensors with length parallelism.n
-  """
-  if parallelism.n == 1:
-    return x
-
-  if maybe_reduce:
-    original_parallelism = parallelism
-    parallelism, x = reduce_by_device(parallelism, x, tf.add_n)
-
-  if parallelism.n == 1:
-    y = x
-  else:
-    # first shard the input:
-    x_flat = parallelism(tf.reshape, x, [[-1]] * parallelism.n)
-    # [device, shard]
-    x_split = parallelism(approximate_split, x_flat, parallelism.n, 0)
-    def _step(source_replica, target_replica, x_split, op="plus_eq"):
-      """Helper function - one step of summing or copying.
-
-      If op == "plus_eq", then adds source_replica into target_replica
-      If op == "copy", then copies source_replica onto target_replica
-
-      These operations happen for all shards.  The replica numbers are offset
-      by the shard numbers to keep all physical links busy.
-
-      Args:
-        source_replica: an integer
-        target_replica: an integer
-        x_split: a list of lists of tensors
-        op: a string
-      """
-      for shard in xrange(parallelism.n):
-        source_device = (shard + source_replica) % parallelism.n
-        target_device = (shard + target_replica) % parallelism.n
-        source = x_split[source_device][shard]
-        if use_bfloat16:
-          with tf.device(parallelism.devices[source_device]):
-            source = tf.to_bfloat16(source)
-        with tf.device(parallelism.devices[target_device]):
-          source = tf.to_float(source)
-          if op == "plus_eq":
-            x_split[target_device][shard] += source
-          else:
-            assert op == "copy"
-            x_split[target_device][shard] = tf.identity(source)
-    center = parallelism.n // 2
-    # accumulate everything towards the center.
-    for i in range(center, parallelism.n - 1)[::-1]:
-      _step(i + 1, i, x_split, op="plus_eq")
-    for i in xrange(center):
-      _step(i, i + 1, x_split, op="plus_eq")
-    # copy everything away from the center.
-    for i in xrange(center, parallelism.n - 1):
-      _step(i, i + 1, x_split, op="copy")
-    for i in range(center)[::-1]:
-      _step(i + 1, i, x_split, op="copy")
-    x_concat = parallelism(tf.concat, x_split, 0)
-    y = parallelism(reshape_like_all_dims, x_concat, x)
-  if maybe_reduce:
-    y = expand_by_device(original_parallelism, parallelism, y)
-  return y
 
 
 def recompute_grad(fn):
@@ -2582,86 +3096,422 @@ def _recompute_grad(fn, args):
         with tf.variable_scope(cached_vs[0], reuse=True):
           outputs = fn(*inputs)
 
-    if not (isinstance(outputs, list) or isinstance(outputs, tuple)):
+    if not isinstance(outputs, (list, tuple)):
       outputs = [outputs]
     outputs = list(outputs)
     grads = tf.gradients(outputs, inputs + variables, output_grads)
     grad_inputs = grads[:len(inputs)]
     grad_vars = grads[len(inputs):]
-    if is_on_tpu():
-      # TODO(noam): remove this hack once XLA does the right thing.
-      # Force the gradinets on the inputs to be computed before the variables
-      # are updated.  This saves memory by preventing XLA from making an extra
-      # copy of the variables.
-      grad_vars = force_dependency(grad_vars, grad_inputs)
+    # TODO(rsepassi): Make fn_with_custom_grad work with bfloat16.
+    # If the input gradients are bfloat16, it's assumed the variables are
+    # bfloat16. This is a hack to ensure that grad_vars are the right type.
+    if grad_inputs[0].dtype == tf.bfloat16:
+      grad_vars = [tf.cast(grad_var, tf.bfloat16) for grad_var in grad_vars]
     return grad_inputs, grad_vars
 
   @fn_with_custom_grad(grad_fn)
   def fn_with_recompute(*args):
     cached_vs.append(tf.get_variable_scope())
-    # TODO(rsepassi): Rm conditional in TF 1.5
-    if hasattr(tf.contrib.framework, "current_arg_scope"):
-      cached_arg_scope.append(tf.contrib.framework.current_arg_scope())
-    else:
-      cached_arg_scope.append({})
+    cached_arg_scope.append(tf.contrib.framework.current_arg_scope())
     return fn(*args)
 
   return fn_with_recompute(*args)
 
 
-def force_dependency(xs, ys):
-  """Force all of xs to depend on all of ys, using a false data dependency.
+def dense(x, units, **kwargs):
+  """Identical to tf.layers.dense."""
+  return tf.layers.dense(x, units, **kwargs)
 
-  XLA seems to ignore control dependencies.
+
+def batch_dense(inputs,
+                units,
+                activation=None,
+                kernel_initializer=None,
+                reuse=None,
+                name=None):
+  """Multiply a batch of input matrices by a batch of parameter matrices.
+
+  Each input matrix is multiplied by the corresponding parameter matrix.
+
+  This is useful in a mixture-of-experts where the batch represents different
+  experts with different inputs.
 
   Args:
-    xs: a list of tensors
-    ys: a list of tensors:
+    inputs: a Tensor with shape [batch, length, input_units]
+    units: an integer
+    activation: an optional activation function to apply to the output
+    kernel_initializer: an optional initializer
+    reuse: whether to reuse the varaible scope
+    name: an optional string
+
   Returns:
-    a list of tensors of the same length as xs
+    a Tensor with shape [batch, length, units]
+
+  Raises:
+    ValueError: if the "batch" or "input_units" dimensions of inputs are not
+      statically known.
   """
-  def _first_element(x):
-    ndims = x.get_shape().ndims
-    return tf.reshape(tf.slice(x, [0] * ndims, [1] * ndims), [])
-  my_zero = tf.add_n([_first_element(y) for y  in ys if y is not None]) * 1e-30
-  return [x + my_zero for x in xs]
+  inputs_shape = shape_list(inputs)
+  if len(inputs_shape) != 3:
+    raise ValueError("inputs must have 3 dimensions")
+  batch = inputs_shape[0]
+  input_units = inputs_shape[2]
+  if not isinstance(batch, int) or not isinstance(input_units, int):
+    raise ValueError("inputs must have static dimensions 0 and 2")
+  with tf.variable_scope(
+      name,
+      default_name="batch_dense",
+      values=[inputs],
+      reuse=reuse,
+      dtype=inputs.dtype):
+    if kernel_initializer is None:
+      kernel_initializer = tf.random_normal_initializer(
+          stddev=input_units**-0.5)
+    w = tf.get_variable(
+        "w", [batch, input_units, units],
+        initializer=kernel_initializer,
+        dtype=inputs.dtype)
+    y = tf.matmul(inputs, w)
+    if activation is not None:
+      y = activation(y)
+    return y
 
 
-def dense(x, units, **kwargs):
-  """Identical to tf.layers.dense, Memory optimization on tpu."""
-  fn = lambda x: tf.layers.dense(x, units, **kwargs)
-  if is_on_tpu():
-    # TODO(noam): remove this hack once XLA does the right thing.
-    # Forces the gradinets on the inputs to be computed before the variables
-    # are updated.  This saves memory by preventing XLA from making an extra
-    # copy of the variables.
-    return _recompute_grad(fn, [x])
-  else:
-    return fn(x)
-
-
-def mix(x1, x2, steps, is_training,
-        min_prob=0.0, max_prob=1.0, mode="lin", simple=False):
+def mix(x1,
+        x2,
+        steps,
+        is_training,
+        min_prob=0.0,
+        max_prob=1.0,
+        mode="lin",
+        simple=False,
+        broadcast_last=False):
   """Mix starting with x2, mixing mixing, going towards x1."""
-  if not is_training:
-    return x1
+  with tf.name_scope("mix"):
+    if not is_training:
+      if max_prob >= 1.0:
+        return x1
+      alpha_shape = shape_list(x1)
+      if broadcast_last:
+        alpha_shape = alpha_shape[:-1] + [1]
+      alpha = tf.random_uniform(alpha_shape)
+      alpha = tf.to_float(tf.less(alpha, max_prob))
+      return alpha * x1 + (1.0 - alpha) * x2
 
-  def get_res():
-    """Create the result. Separate function to speed it up later (see below)."""
-    if mode == "lin":
-      alpha_p = inverse_lin_decay(steps)
+    def get_res():
+      """Create the result.
+
+      Separate function to speed it up later (see below).
+
+      Returns:
+        Tensor of mixed inputs.
+      """
+      if mode == "lin":
+        alpha_p = inverse_lin_decay(steps)
+      else:
+        alpha_p = inverse_exp_decay(steps)
+      alpha_p = alpha_p * (max_prob - min_prob) + min_prob
+      if simple:
+        return alpha_p * x1 + (1.0 - alpha_p) * x2
+      alpha_shape = shape_list(x1)
+      if broadcast_last:
+        alpha_shape = alpha_shape[:-1] + [1]
+      alpha = tf.random_uniform(alpha_shape)
+      alpha = tf.to_float(tf.less(alpha, alpha_p))
+      return alpha * x1 + (1.0 - alpha) * x2
+
+    if max_prob < 1.0:
+      return get_res()
+
+    # Prevent sampling after steps is passed to speed it up.
+    if is_on_tpu():
+      return get_res()
     else:
-      alpha_p = inverse_exp_decay(steps)
-    alpha_p = alpha_p * (max_prob - min_prob) + min_prob
-    if simple:
-      return alpha_p * x1 + (1.0 - alpha_p) * x2
-    alpha = tf.random_uniform(shape_list(x1))
-    alpha = tf.to_float(tf.less(alpha, alpha_p))
-    return alpha * x1 + (1.0 - alpha) * x2
+      return tf.cond(
+          tf.less(tf.train.get_global_step(), steps), get_res, lambda: x1)
 
-  if max_prob < 1.0:
-    return get_res()
 
-  # Prevent sampling after steps is passed to speed it up.
-  return tf.cond(tf.less(tf.train.get_global_step(), steps),
-                 get_res, lambda: x1)
+def brelu(x):
+  """Bipolar ReLU as in https://arxiv.org/abs/1709.04054."""
+  x_shape = shape_list(x)
+  x1, x2 = tf.split(tf.reshape(x, x_shape[:-1] + [-1, 2]), 2, axis=-1)
+  y1 = tf.nn.relu(x1)
+  y2 = -tf.nn.relu(-x2)
+  return tf.reshape(tf.concat([y1, y2], axis=-1), x_shape)
+
+
+def belu(x):
+  """Bipolar ELU as in https://arxiv.org/abs/1709.04054."""
+  x_shape = shape_list(x)
+  x1, x2 = tf.split(tf.reshape(x, x_shape[:-1] + [-1, 2]), 2, axis=-1)
+  y1 = tf.nn.elu(x1)
+  y2 = -tf.nn.elu(-x2)
+  return tf.reshape(tf.concat([y1, y2], axis=-1), x_shape)
+
+
+def argmax_with_score(logits, axis=None):
+  """Argmax along with the value."""
+  axis = axis or len(logits.get_shape()) - 1
+  predictions = tf.argmax(logits, axis=axis)
+
+  logits_shape = shape_list(logits)
+  prefix_shape, vocab_size = logits_shape[:-1], logits_shape[-1]
+  prefix_size = 1
+  for d in prefix_shape:
+    prefix_size *= d
+
+  # Flatten to extract scores
+  flat_logits = tf.reshape(logits, [prefix_size, vocab_size])
+  flat_predictions = tf.reshape(predictions, [prefix_size])
+  flat_indices = tf.stack(
+      [tf.range(tf.to_int64(prefix_size)),
+       tf.to_int64(flat_predictions)],
+      axis=1)
+  flat_scores = tf.gather_nd(flat_logits, flat_indices)
+
+  # Unflatten
+  scores = tf.reshape(flat_scores, prefix_shape)
+
+  return predictions, scores
+
+
+def log_prob_from_logits(logits, reduce_axis=-1):
+  return logits - tf.reduce_logsumexp(logits, axis=reduce_axis, keepdims=True)
+
+
+def top_1_tpu(inputs):
+  """find max and argmax over the last dimension.
+
+  Works well on TPU
+
+  Args:
+    inputs: A tensor with shape [..., depth]
+
+  Returns:
+    values: a Tensor with shape [...]
+    indices: a Tensor with shape [...]
+  """
+  inputs_max = tf.reduce_max(inputs, axis=-1, keepdims=True)
+  mask = tf.to_int32(tf.equal(inputs_max, inputs))
+  index = tf.range(tf.shape(inputs)[-1]) * mask
+  return tf.squeeze(inputs_max, -1), tf.reduce_max(index, axis=-1)
+
+
+def index_last_dim_with_indices(x, indices):
+  """Use indices to index into the last axis of x.
+
+  This can be useful for recovering the actual probabilities of a sample from a
+  probability distribution.
+
+  Args:
+    x: Tensor, n-d.
+    indices: Tensor, (n-1)-d, where the dimension sizes match the first (n-1)
+      dimensions of x. The values of indices will be used to index into the last
+      axis of x.
+
+  Returns:
+    Tensor, (n-1)-d.
+  """
+  assert len(x.shape) == len(indices.shape) + 1
+
+  x_shape = shape_list(x)
+  vocab_size = x_shape[-1]
+
+  flat_x = tf.reshape(x, [list_product(x_shape[:-1]), vocab_size])
+  flat_indices = tf.reshape(indices, [list_product(x_shape[:-1])])
+
+  idx = tf.stack(
+      [
+          tf.range(tf.to_int64(shape_list(flat_indices)[0])),
+          tf.to_int64(flat_indices)
+      ],
+      axis=1)
+  flat_x_idx = tf.gather_nd(flat_x, idx)
+
+  x_idx = tf.reshape(flat_x_idx, x_shape[:-1])
+
+  return x_idx
+
+
+def should_generate_summaries():
+  """Is this an appropriate context to generate summaries.
+
+  Returns:
+    a boolean
+  """
+  if "while/" in tf.contrib.framework.get_name_scope():
+    # Summaries don't work well within tf.while_loop()
+    return False
+  if tf.get_variable_scope().reuse:
+    # Avoid generating separate summaries for different data shards
+    return False
+  return True
+
+
+def reshape_like(a, b):
+  """Reshapes a to match the shape of b in all but the last dimension."""
+  ret = tf.reshape(a, tf.concat([tf.shape(b)[:-1], tf.shape(a)[-1:]], 0))
+  if not tf.contrib.eager.in_eager_mode():
+    ret.set_shape(b.get_shape().as_list()[:-1] + a.get_shape().as_list()[-1:])
+  return ret
+
+
+def summarize_video(video, prefix, max_outputs=1):
+  """Summarize the video using image summaries starting with prefix."""
+  video_shape = shape_list(video)
+  if len(video_shape) != 5:
+    raise ValueError("Assuming videos given as tensors in the format "
+                     "[batch, time, height, width, channels] but got one "
+                     "of shape: %s" % str(video_shape))
+  if tf.contrib.eager.in_eager_mode():
+    return
+  if video.get_shape().as_list()[1] is None:
+    tf.summary.image(
+        "%s_last_frame" % prefix,
+        tf.cast(video[:, -1, :, :, :], tf.uint8),
+        max_outputs=max_outputs)
+  else:
+    for k in range(video_shape[1]):
+      tf.summary.image(
+          "%s_frame_%d" % (prefix, k),
+          tf.cast(video[:, k, :, :, :], tf.uint8),
+          max_outputs=max_outputs)
+
+
+def time_to_channels(embedded_video):
+  """Put time dimension on channels in an embedded video."""
+  video_shape = shape_list(embedded_video)
+  if len(video_shape) != 5:
+    raise ValueError("Assuming videos given as tensors in the format "
+                     "[batch, time, height, width, channels] but got one "
+                     "of shape: %s" % str(video_shape))
+  transposed = tf.transpose(embedded_video, [0, 2, 3, 1, 4])
+  return tf.reshape(transposed, [
+      video_shape[0], video_shape[2], video_shape[3],
+      video_shape[1] * video_shape[4]
+  ])
+
+
+def cast_like(x, y):
+  """Cast x to y's dtype, if necessary."""
+  x = tf.convert_to_tensor(x)
+  y = tf.convert_to_tensor(y)
+
+  if x.dtype.base_dtype == y.dtype.base_dtype:
+    return x
+
+  cast_x = tf.cast(x, y.dtype)
+  if cast_x.device != x.device:
+    tf.logging.warning("Cast for %s may induce copy from '%s' to '%s'", x.name,
+                       x.device, cast_x.device)
+  return cast_x
+
+
+def make_even_size(x):
+  """Pad x to be even-sized on axis 1 and 2, but only if necessary."""
+  x_shape = x.get_shape().as_list()
+  assert len(x_shape) > 2, "Only 3+-dimensional tensors supported."
+  shape = [dim if dim is not None else -1 for dim in x_shape]
+  new_shape = x_shape  # To make sure constant shapes remain constant.
+  if x_shape[1] is not None:
+    new_shape[1] = 2 * int(math.ceil(x_shape[1] * 0.5))
+  if x_shape[2] is not None:
+    new_shape[2] = 2 * int(math.ceil(x_shape[2] * 0.5))
+  if shape[1] % 2 == 0 and shape[2] % 2 == 0:
+    return x
+  if shape[1] % 2 == 0:
+    x, _ = pad_to_same_length(x, x, final_length_divisible_by=2, axis=2)
+    x.set_shape(new_shape)
+    return x
+  if shape[2] % 2 == 0:
+    x, _ = pad_to_same_length(x, x, final_length_divisible_by=2, axis=1)
+    x.set_shape(new_shape)
+    return x
+  x, _ = pad_to_same_length(x, x, final_length_divisible_by=2, axis=1)
+  x, _ = pad_to_same_length(x, x, final_length_divisible_by=2, axis=2)
+  x.set_shape(new_shape)
+  return x
+
+
+def sliced_gan_loss(input1,
+                    input2,
+                    discriminator,
+                    num_vecs,
+                    do_random_vecs=True,
+                    do_tanh=True):
+  """Loss inspired by the sliced WGAN paper: https://arxiv.org/abs/1804.01947.
+
+  Puts input1 and input2 through the provided discriminator to get logits.
+  Then, computes num_vecs random projections of the logits, sorts them on
+  the batch dimension and returns the L2 loss between the sorted vectors.
+  See the above-mentioned paper for the reasoning behind it.
+
+  Args:
+    input1: first discriminator inputs.
+    input2: second discriminator inputs.
+    discriminator: inputs -> logits function.
+    num_vecs: how many random vectors to use for projections.
+    do_random_vecs: whether to use random vectors or just tanh of the logits.
+    do_tanh: if true (default) we'll also just use tanh of the logits.
+
+  Returns:
+    The generator loss, i.e., the sliced approximation of the distance between
+    the projected distributions (warning: discriminator should maximize it).
+  """
+  with tf.variable_scope("sliced_gan"):
+    with tf.variable_scope("discriminator"):
+      logits1 = discriminator(input1)
+    with tf.variable_scope("discriminator", reuse=True):
+      logits2 = discriminator(input2)
+
+    if do_random_vecs:
+      random_vecs = tf.nn.l2_normalize(
+          tf.random_uniform([shape_list(logits1)[-1], num_vecs]), axis=0)
+
+    def get_sorted_projections(x):
+      """Make projections of x and sort them on the batch dimension."""
+      x = tf.reshape(x, [-1, shape_list(x)[-1]])
+      batch_size = shape_list(x)[0]
+      if do_random_vecs and do_tanh:
+        n = tf.nn.l2_normalize(x, axis=1)
+        proj = tf.concat([tf.matmul(n, random_vecs), tf.tanh(x)], axis=1)
+      elif do_random_vecs:
+        n = tf.nn.l2_normalize(x, axis=1)
+        proj = tf.matmul(n, random_vecs)
+      else:
+        proj = tf.tanh(x)
+      proj = tf.transpose(proj, [1, 0])  # [num_vecs, batch] after this.
+
+      if is_on_tpu():
+        proj_dtype = proj.dtype
+        proj = tf.cast(proj, tf.bfloat16)
+
+        # Currently TPU only supports 1-D top_k calls.
+        map_fn = lambda x: tf.nn.top_k(x, k=batch_size, sorted=True)[0]
+        values = tf.map_fn(map_fn, proj)
+
+        values = tf.cast(values, proj_dtype)
+      else:
+        values, _ = tf.nn.top_k(proj, k=batch_size, sorted=True)
+
+      return values
+
+    proj1 = get_sorted_projections(logits1)
+    proj2 = get_sorted_projections(logits2)
+    return tf.reduce_mean(tf.square(proj1 - proj2))
+
+
+def upscale(inputs, f, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR):
+  """Upscaling the image by a factor of f."""
+  height, width = shape_list(inputs)[1:3]
+  return tf.image.resize_images(inputs, (height * f, width * f), method)
+
+
+def tpu_safe_image_summary(image):
+  if is_on_tpu():
+    # We only support float32 images at the moment due to casting complications.
+    if image.dtype != tf.float32:
+      image = tf.to_float(image)
+  else:
+    image = tf.cast(image, tf.uint8)
+  return image

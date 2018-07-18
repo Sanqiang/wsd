@@ -43,7 +43,6 @@ class Data:
             self.abbrs_filterout.add(line.strip())
 
     def process_line(self, line):
-        checker = set()
         contexts = []
         targets = []
         words = line.split()
@@ -60,47 +59,59 @@ class Data:
                     wid = self.voc.encode(abbr)
                 else:
                     wid = self.voc.encode(NONTAR)
-                if abbr not in self.abbrs_pos:
-                    if abbr not in self.abbr2id:
-                        continue
-                    abbr_id = self.abbr2id[abbr]
-                    if abbr_id not in checker and len(targets) < self.model_config.max_abbrs:
-                        if abbr + '|' + sense in self.sense2id:
-                            sense_id = self.sense2id[abbr + '|' + sense]
-                            targets.append([id, abbr_id, sense_id])
-                            checker.add(abbr_id)
+                if abbr not in self.abbr2id:
+                    continue
+                abbr_id = self.abbr2id[abbr]
+                if abbr + '|' + sense in self.sense2id:
+                    sense_id = self.sense2id[abbr + '|' + sense]
+                    targets.append([id, abbr_id, sense_id])
             else:
                 wid = self.voc.encode(word)
             contexts.extend(wid)
         contexts.extend(self.voc.encode(EOS))
 
-        if len(contexts) > self.model_config.max_context_len:
-            contexts = contexts[:self.model_config.max_context_len]
-        else:
-            num_pad = self.model_config.max_context_len - len(contexts)
-            contexts.extend(self.voc.encode(PAD) * num_pad)
-        assert len(contexts) == self.model_config.max_context_len
+        objs = []
+        window_size = int(self.model_config.max_context_len / 2)
+        for target in targets:
+            step = target[0]
+            extend_size = 0
+            if step < window_size:
+                left_idx = 0
+                extend_size = window_size - step
+            else:
+                left_idx = step - window_size
 
-        if len(targets) > self.model_config.max_abbrs:
-            targets = targets[:self.model_config.max_abbrs]
-        else:
-            num_pad = self.model_config.max_abbrs - len(targets)
-            targets.extend([[0, 0, 0]] * num_pad)
-        assert len(targets) == self.model_config.max_abbrs
+            if step + window_size > len(contexts):
+                right_idx = len(contexts)
+            else:
+                right_idx = min(
+                    step + window_size + extend_size, len(contexts))
 
-        obj = {
-                'contexts': contexts,
-                'targets': targets
-        }
-        return obj
+            cur_contexts = contexts[left_idx:right_idx]
+
+            if len(cur_contexts) > self.model_config.max_context_len:
+                cur_contexts = cur_contexts[:self.model_config.max_context_len]
+            else:
+                num_pad = self.model_config.max_context_len - len(cur_contexts)
+                cur_contexts.extend(self.voc.encode(PAD) * num_pad)
+            assert len(cur_contexts) == self.model_config.max_context_len
+
+            obj = {
+                'contexts': cur_contexts,
+                'target': target,
+                'line': line
+            }
+            objs.append(obj)
+        return objs
 
     def populate_data(self, path):
         self.datas = []
         for line in open(path):
-            obj = self.process_line(line)
-            self.datas.append(obj)
-            #break
-            
+            objs = self.process_line(line)
+            self.datas.extend(objs)
+            # break
+
+
 class TrainData(Data):
     def __init__(self, model_config):
         Data.__init__(self, model_config)
@@ -111,7 +122,6 @@ class TrainData(Data):
             self.data_it = self.get_sample_it()
             self.size = self.get_size()
             print('Finished Data Iter with %s samples.' % str(self.size))
-
 
     def get_size(self):
         return len(open(self.model_config.train_file, encoding='utf-8').readlines())
@@ -152,7 +162,6 @@ class EvalData(Data):
             return data
         else:
             return None
-
 
     def reset(self):
         self.i = 0

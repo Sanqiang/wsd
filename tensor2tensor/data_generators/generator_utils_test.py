@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Generator utilities test."""
 
 from __future__ import absolute_import
@@ -23,9 +22,6 @@ import gzip
 import io
 import os
 import tempfile
-
-# Dependency imports
-
 from builtins import bytes  # pylint: disable=redefined-builtin
 
 from tensor2tensor.data_generators import generator_utils

@@ -12,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Hyperparameters and ranges common to multiple models."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
 from six.moves import zip  # pylint: disable=redefined-builtin
 from tensor2tensor.utils import registry
 
@@ -68,6 +64,8 @@ def basic_params1():
       optimizer_adafactor_memory_exponent=0.8,
       optimizer_adafactor_clipping_threshold=1.0,
       optimizer_adafactor_multiply_by_parameter_scale=True,
+      # Number of accumulating steps for multi step optimizers.
+      optimizer_multistep_accumulate_steps=None,
       weight_decay=1e-6,
       weight_noise=0.0,
       # Defines the learning rate as a product of named functions.
@@ -91,7 +89,6 @@ def basic_params1():
       learning_rate=0.1,
       sampling_method="argmax",  # "argmax" or "random"
       sampling_temp=1.0,  # temperature for sampling
-      problem_choice="adaptive",  # "uniform", "adaptive", "distributed"
       # expand the logits a piece at a time - saves memory.
       factored_logits=False,
       multiply_embedding_mode="sqrt_depth",
@@ -102,13 +99,13 @@ def basic_params1():
       moe_loss_coef=1e-2,
       # Sequences of operations to perform on layer input and layer output.
       # Used by common_layers.layer_preprocess, common_layers.layer_postprocess
-      # Each character repsesnts an operation:
+      # Each character represents an operation:
       # none: no preprocessing
       #    d: apply dropout
       #    n: apply normalization (see norm_type and norm_epsilon)
       #    a: add layer input (residual connection - only during postprocess)
       # The special string "none" is used instead of the empty string
-      # to indicate no pre/postprocesisng, since the empty string causes
+      # to indicate no pre/postprocessing, since the empty string causes
       # trouble for hyperparameter tuning.
       # TODO(noam): The current settings ("", "dan") are the published version
       # of the transformer.  ("n", "da") seems better for harder-to-learn
@@ -129,6 +126,8 @@ def basic_params1():
       # epsilon parameter to normalization function
       norm_epsilon=1e-6,
       symbol_modality_num_shards=1,
+      # pad vocabularies so that this value divides the vocabulary size.
+      vocab_divisor=1,
       # During training, we drop sequences whose inputs and targets are shorter
       # than min_length
       min_length=0,
@@ -155,12 +154,15 @@ def basic_params1():
       # during eval
       eval_run_autoregressive=False,
       # TODO(lukaszkaiser): these parameters should probably be set elsewhere.
-      # in SymbolModality, share the output embeddings and the softmax
-      # variables.
-      # You can also share the input embeddings with the output embeddings
+      # (SymbolModality) - If this flag is on, we try to share all of the input
+      # embeddings, the target embeddings and the softmax weights.
+      shared_embedding_and_softmax_weights=False,
+      # (SymbolModality) - If this flag is on, we try to share the input
+      # embeddings and the target embeddings.
+      # You can also share the input embeddings with the target embeddings
       # by using a problem_hparams that uses the same modality object for
       # the input_modality and target_modality.
-      shared_embedding_and_softmax_weights=False,
+      shared_embedding=False,
       # In SymbolModality, skip the top layer, assume we're providing logits.
       symbol_modality_skip_top=False,
       # For each feature for which you want to override the default input
@@ -174,13 +176,13 @@ def basic_params1():
       # The maximum length of "input" sequence.
       # Sequences longer than this value will be truncated. 0 or negative values
       # mean there is no maximum or truncation.
-      # You can change this behavior by overridding preprocess_example() method
+      # You can change this behavior by overriding preprocess_example() method
       # in your problem class.
       max_input_seq_length=0,
       # The maximum length of "target" sequence.
       # Sequences longer than this value will be truncated. 0 or negative values
       # mean there is no maximum or truncation.
-      # You can change this behavior by overridding preprocess_example() method
+      # You can change this behavior by overriding preprocess_example() method
       # in your problem class.
       max_target_seq_length=0,
       # if nonzero, we split the target sequences on example read.
@@ -188,6 +190,9 @@ def basic_params1():
       # examples.  e.g.  The examples may be written with length 65536, but we
       # want to split each example into 64 examples of length 1024.
       split_to_length=0,
+      # Video settings: how many frames to batch on input and targets.
+      video_num_input_frames=1,
+      video_num_target_frames=1,
       # This flag allows us to optionally treat a seq-to-seq problem
       # as a language model.  Legal values are:
       #
@@ -220,7 +225,7 @@ def basic_params1():
       scheduled_sampling_warmup_steps=50000,
       scheduled_sampling_gold_mixin_prob=0.5,
       # This setting controls whether to copy variables around in a daisy chain
-      # (if true) or leave their placement to Tensorflow. It only affects multi
+      # (if true) or leave their placement to TensorFlow. It only affects multi
       # device training and mostly should be turned on for performance. One
       # exception are recurrent models: with dynamic loops it must be off.
       daisy_chain_variables=True,
@@ -229,6 +234,20 @@ def basic_params1():
       force_full_predict=False,
       # Set this for pure model parallelism.  There is only one data shard.
       no_data_parallelism=False,
+      # dtype used for activations. - "float32" or "bfloat16"
+      # activation_dtype="bfloat16" currently only works on TPU.
+      #    It lowers activation-memory usage
+      #    and does not appear to affect quality.
+      #    You can train on TPU with activation_dtype="bfloat16" and evaluate
+      #    on CPU/GPU with activation_dtype="float32"
+      activation_dtype="float32",
+      # dtype used for parameters: "float32" or "bfloat16"
+      # bfloat16 currently only works with optimizer="adafactor".
+      #   The savings in memory allow for training larger models.
+      #   Weights are encoded as (w*128)^8, using pseudostochastic
+      #   roundoff.  Initial experiments show that model quality is similar
+      #   to baseline for about 3M training steps, but worse thereafter.
+      weight_dtype="float32",
   )
 
 
@@ -376,3 +395,9 @@ def basic_range1(ranged_hparams):
   rhp.set_categorical(
       "optimizer",
       ["Adam", "Adagrad", "Momentum", "RMSProp", "SGD", "YellowFin"])
+
+
+@registry.register_ranged_hparams
+def basic_moe_range(rhp):
+  """Moe range; when this parameter is unused, it allows us to see variance."""
+  rhp.set_float("moe_loss_coef", 0.01, 0.02)

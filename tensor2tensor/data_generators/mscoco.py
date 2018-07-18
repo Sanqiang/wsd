@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """MS COCO."""
 
 from __future__ import absolute_import
@@ -24,9 +23,6 @@ import json
 import os
 import random
 import zipfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import image_utils
 from tensor2tensor.data_generators import imagenet
@@ -97,7 +93,7 @@ def mscoco_generator(data_dir,
         vocab_symbolizer = text_encoder.SubwordTextEncoder(vocab_filepath)
         return vocab_symbolizer
       else:
-        raise ValueError("Vocab file does not exist: %s", vocab_filepath)
+        raise ValueError("Vocab file does not exist: %s" % vocab_filepath)
     return None
 
   vocab_symbolizer = get_vocab()
@@ -218,6 +214,41 @@ class ImageMsCocoTokens32k(ImageMsCocoCharacters):
           False,
           40000,
           vocab_filename=vocab_filename)
+
+
+@registry.register_problem
+class ImageTextMsCocoMultiResolution(ImageMsCocoTokens32k):
+  """MSCoCo at multiple resolutions."""
+
+  def dataset_filename(self):
+    return "image_ms_coco_tokens32k"
+
+  def preprocess_example(self, example, mode, hparams):
+    image = example["inputs"]
+    # Get resize method. Include a default if not specified, or if it's not in
+    # TensorFlow's collection of pre-implemented resize methods.
+    resize_method = getattr(hparams, "resize_method", "BICUBIC")
+    resize_method = getattr(tf.image.ResizeMethod, resize_method, resize_method)
+
+    highest_res = hparams.resolutions[-1]
+    if resize_method == "DILATED":
+      # Resize image so that dilated subsampling is properly divisible.
+      scaled_image = image_utils.resize_by_area(image, highest_res)
+      scaled_images = image_utils.make_multiscale_dilated(
+          scaled_image, hparams.resolutions, num_channels=self.num_channels)
+    else:
+      scaled_images = image_utils.make_multiscale(
+          image, hparams.resolutions,
+          resize_method=resize_method, num_channels=self.num_channels)
+
+    # Pack tuple of scaled images into one tensor. We do this by enforcing the
+    # columns to match for every resolution.
+    example["inputs"] = tf.concat([
+        tf.reshape(scaled_image,
+                   [res**2 // highest_res, highest_res, self.num_channels])
+        for scaled_image, res in zip(scaled_images, hparams.resolutions)],
+                                  axis=0)
+    return example
 
 
 @registry.register_problem

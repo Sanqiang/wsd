@@ -12,14 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Common command-line flags."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# Dependency imports
 import tensorflow as tf
 
 flags = tf.flags
@@ -43,8 +41,7 @@ flags.DEFINE_string(
     hyperparameters or when using Vizier. If a hyperparameter setting is
     specified by this flag then it must be a valid hyperparameter name for the
     model.""")
-flags.DEFINE_string("problems", None, "Dash separated list of problems to "
-                    "solve.")
+flags.DEFINE_string("problem", None, "Problem name.")
 
 # data_dir is a common flag name - catch conflicts and define it once.
 try:
@@ -90,6 +87,9 @@ flags.DEFINE_bool("log_device_placement", False,
 flags.DEFINE_integer("local_eval_frequency", 1000,
                      "Save checkpoints and run evaluation every N steps during "
                      "local training.")
+flags.DEFINE_integer("eval_throttle_seconds", 600,
+                     "Do not re-evaluate unless the last evaluation was started"
+                     " at least this many seconds ago.")
 flags.DEFINE_bool("locally_shard_to_cpu", False,
                   "Use CPU as a sharding device running locally. This allows "
                   "to test sharded model construction on a machine with 1 GPU.")
@@ -101,7 +101,7 @@ flags.DEFINE_integer("worker_id", 0, "Which worker task are we.")
 flags.DEFINE_float("worker_gpu_memory_fraction", 0.95,
                    "Fraction of GPU memory to allocate.")
 flags.DEFINE_integer("ps_gpu", 0, "How many GPUs to use per ps.")
-flags.DEFINE_string("gpu_order", "", "Optional order for daisy-chaining gpus."
+flags.DEFINE_string("gpu_order", "", "Optional order for daisy-chaining GPUs."
                     " e.g. \"1 3 2 4\"")
 flags.DEFINE_string("ps_job", "/job:ps", "name of ps job")
 flags.DEFINE_integer("ps_replicas", 0, "How many ps replicas.")

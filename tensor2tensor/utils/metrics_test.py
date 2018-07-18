@@ -12,13 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Tests for tensor2tensor.utils.metrics."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
 
 import numpy as np
 from tensor2tensor.utils import metrics
@@ -26,7 +23,7 @@ from tensor2tensor.utils import metrics
 import tensorflow as tf
 
 
-class CommonLayersTest(tf.test.TestCase):
+class MetricsTest(tf.test.TestCase):
 
   def testAccuracyMetric(self):
     predictions = np.random.randint(1, 5, size=(12, 12, 12, 1))
@@ -106,6 +103,143 @@ class CommonLayersTest(tf.test.TestCase):
       session.run(tf.global_variables_initializer())
       actual = session.run(a)
     self.assertEqual(actual.shape, ())
+
+  def testSigmoidAccuracyOneHot(self):
+    logits = np.array([
+        [-1., 1.],
+        [1., -1.],
+        [-1., 1.],
+        [1., -1.]
+    ])
+    labels = np.array([
+        [0, 1],
+        [1, 0],
+        [1, 0],
+        [0, 1]
+    ])
+    logits = np.expand_dims(np.expand_dims(logits, 1), 1)
+    labels = np.expand_dims(np.expand_dims(labels, 1), 1)
+
+    with self.test_session() as session:
+      score, _ = metrics.sigmoid_accuracy_one_hot(logits, labels)
+      session.run(tf.global_variables_initializer())
+      session.run(tf.local_variables_initializer())
+      s = session.run(score)
+    self.assertEqual(s, 0.5)
+
+  def testSigmoidPrecisionOneHot(self):
+    logits = np.array([
+        [-1., 1.],
+        [1., -1.],
+        [1., -1.],
+        [1., -1.]
+    ])
+    labels = np.array([
+        [0, 1],
+        [0, 1],
+        [0, 1],
+        [0, 1]
+    ])
+    logits = np.expand_dims(np.expand_dims(logits, 1), 1)
+    labels = np.expand_dims(np.expand_dims(labels, 1), 1)
+
+    with self.test_session() as session:
+      score, _ = metrics.sigmoid_precision_one_hot(logits, labels)
+      session.run(tf.global_variables_initializer())
+      session.run(tf.local_variables_initializer())
+      s = session.run(score)
+    self.assertEqual(s, 0.25)
+
+  def testSigmoidRecallOneHot(self):
+    logits = np.array([
+        [-1., 1.],
+        [1., -1.],
+        [1., -1.],
+        [1., -1.]
+    ])
+    labels = np.array([
+        [0, 1],
+        [0, 1],
+        [0, 1],
+        [0, 1]
+    ])
+    logits = np.expand_dims(np.expand_dims(logits, 1), 1)
+    labels = np.expand_dims(np.expand_dims(labels, 1), 1)
+
+    with self.test_session() as session:
+      score, _ = metrics.sigmoid_recall_one_hot(logits, labels)
+      session.run(tf.global_variables_initializer())
+      session.run(tf.local_variables_initializer())
+      s = session.run(score)
+    self.assertEqual(s, 0.25)
+
+  def testSigmoidCrossEntropyOneHot(self):
+    logits = np.array([
+        [-1., 1.],
+        [1., -1.],
+        [1., -1.],
+        [1., -1.]
+    ])
+    labels = np.array([
+        [0, 1],
+        [1, 0],
+        [0, 0],
+        [0, 1]
+    ])
+    logits = np.expand_dims(np.expand_dims(logits, 1), 1)
+    labels = np.expand_dims(np.expand_dims(labels, 1), 1)
+
+    with self.test_session() as session:
+      score, _ = metrics.sigmoid_cross_entropy_one_hot(logits, labels)
+      session.run(tf.global_variables_initializer())
+      session.run(tf.local_variables_initializer())
+      s = session.run(score)
+    self.assertAlmostEqual(s, 0.688, places=3)
+
+  def testRocAuc(self):
+    logits = np.array([
+        [-1., 1.],
+        [1., -1.],
+        [1., -1.],
+        [1., -1.]
+    ])
+    labels = np.array([
+        [1],
+        [0],
+        [1],
+        [0]
+    ])
+    logits = np.expand_dims(np.expand_dims(logits, 1), 1)
+    labels = np.expand_dims(np.expand_dims(labels, 1), 1)
+
+    with self.test_session() as session:
+      score, _ = metrics.roc_auc(logits, labels)
+      session.run(tf.global_variables_initializer())
+      session.run(tf.local_variables_initializer())
+      s = session.run(score)
+    self.assertAlmostEqual(s, 0.750, places=3)
+
+  def testMultilabelMatch3(self):
+    predictions = np.random.randint(1, 5, size=(100, 1, 1, 1))
+    targets = np.random.randint(1, 5, size=(100, 10, 1, 1))
+    weights = np.random.randint(0, 2, size=(100, 1, 1, 1))
+    targets *= weights
+
+    predictions_repeat = np.repeat(predictions, 10, axis=1)
+    expected = (predictions_repeat == targets).astype(float)
+    expected = np.sum(expected, axis=(1, 2, 3))
+    expected = np.minimum(expected / 3.0, 1.)
+    expected = np.sum(expected * weights[:, 0, 0, 0]) / weights.shape[0]
+    with self.test_session() as session:
+      scores, weights_ = metrics.multilabel_accuracy_match3(
+          tf.one_hot(predictions, depth=5, dtype=tf.float32),
+          tf.constant(targets, dtype=tf.int32))
+      a, a_op = tf.metrics.mean(scores, weights_)
+      session.run(tf.local_variables_initializer())
+      session.run(tf.global_variables_initializer())
+      _ = session.run(a_op)
+      actual = session.run(a)
+    self.assertAlmostEqual(actual, expected, places=6)
 
 
 if __name__ == '__main__':

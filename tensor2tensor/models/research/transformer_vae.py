@@ -12,15 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """AE Transformer."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from functools import partial
+
+import functools
 import math
-# Dependency imports
+from six.moves import range  # pylint: disable=redefined-builtin
+
 from tensor2tensor.layers import common_attention
 from tensor2tensor.layers import common_image_attention as cia
 from tensor2tensor.layers import common_layers
@@ -30,7 +31,9 @@ from tensor2tensor.utils import beam_search
 from tensor2tensor.utils import expert_utils
 from tensor2tensor.utils import registry
 from tensor2tensor.utils import t2t_model
+
 import tensorflow as tf
+
 
 _DO_SUMMARIES = True
 
@@ -38,8 +41,8 @@ _DO_SUMMARIES = True
 def residual_conv(x, repeat, k, hparams, name, reuse=None):
   """A stack of convolution blocks with residual connections."""
   with tf.variable_scope(name, reuse=reuse):
-    dilations_and_kernels = [((1, 1), k) for _ in xrange(3)]
-    for i in xrange(repeat):
+    dilations_and_kernels = [((1, 1), k) for _ in range(3)]
+    for i in range(repeat):
       with tf.variable_scope("repeat_%d" % i):
         y = common_layers.conv_block(
             common_layers.layer_norm(x, hparams.hidden_size, name="lnorm"),
@@ -53,6 +56,7 @@ def residual_conv(x, repeat, k, hparams, name, reuse=None):
 
 
 def attend(x, source, hparams, name):
+  """Self-attention layer with source as memory antecedent."""
   with tf.variable_scope(name):
     x = tf.squeeze(x, axis=2)
     if len(source.get_shape()) > 3:
@@ -86,9 +90,9 @@ def top_k_softmax(x, k):
   """Calculate softmax(x), select top-k and rescale to sum to 1."""
   x = tf.nn.softmax(x)
   top_x, _ = tf.nn.top_k(x, k=k+1)
-  min_top = tf.reduce_min(top_x, axis=-1, keep_dims=True)
+  min_top = tf.reduce_min(top_x, axis=-1, keepdims=True)
   x = tf.nn.relu((x - min_top) + 1e-12)
-  x /= tf.reduce_sum(x, axis=-1, keep_dims=True)
+  x /= tf.reduce_sum(x, axis=-1, keepdims=True)
   return x, tf.reduce_max(top_x, axis=-1)
 
 
@@ -97,8 +101,8 @@ def top_k_experts(x, k, hparams):
   x_flat = tf.reshape(x, [-1, common_layers.shape_list(x)[-1]])
   is_training = hparams.mode == tf.contrib.learn.ModeKeys.TRAIN
   gates, load = expert_utils.noisy_top_k_gating(
-      x_flat, hparams.v_size, is_training, k)
-  gates_shape = [x_shape[0], x_shape[1], x_shape[2], hparams.v_size]
+      x_flat, 2 ** hparams.z_size, is_training, k)
+  gates_shape = [x_shape[0], x_shape[1], x_shape[2], 2 ** hparams.z_size]
   gates = tf.reshape(gates, gates_shape)
   load_loss = expert_utils.cv_squared(load)
   return gates, load_loss
@@ -114,7 +118,7 @@ def compress(x, c, is_2d, hparams, name):
     cur = residual_conv(cur, hparams.num_compress_steps, k1, hparams, "rc")
     if c is not None and hparams.do_attend_compress:
       cur = attend(cur, c, hparams, "compress_attend")
-    for i in xrange(hparams.num_compress_steps):
+    for i in range(hparams.num_compress_steps):
       if hparams.do_residual_compress:
         cur = residual_conv(cur, hparams.num_compress_steps, k1, hparams,
                             "rc_%d" % i)
@@ -139,8 +143,10 @@ def decode_transformer(encoder_output,
                        targets,
                        hparams,
                        name,
-                       task=None):
+                       task=None,
+                       causal=True):
   """Original Transformer decoder."""
+  orig_hparams = hparams
   with tf.variable_scope(name):
     if task is None:
       task = hparams.task
@@ -152,6 +158,9 @@ def decode_transformer(encoder_output,
 
       decoder_input = tf.nn.dropout(decoder_input,
                                     1.0 - hparams.layer_prepostprocess_dropout)
+
+      if not causal:
+        decoder_self_bias *= 0.
 
       decoder_output = transformer.transformer_decoder(
           decoder_input,
@@ -170,7 +179,10 @@ def decode_transformer(encoder_output,
                                      hparams.num_channels*hparams.hidden_size])
 
       # Prepare decoder inputs and bias.
-      decoder_input, _, _, bias = cia.prepare_decoder(targets, hparams)
+      # TODO(nikip): Make prepare_decoder return bias
+      decoder_input, _, _ = cia.prepare_decoder(targets, hparams)
+      bias = None
+
       # Add class label to decoder input.
       if not hparams.drop_inputs:
         decoder_input += tf.reshape(
@@ -188,6 +200,7 @@ def decode_transformer(encoder_output,
     decoder_output = tf.reshape(decoder_output, [decoder_output_shape[0], -1, 1,
                                                  hparams.hidden_size])
     # Expand since t2t expects 4d tensors.
+    hparams = orig_hparams
     return decoder_output
 
 
@@ -203,16 +216,24 @@ def multinomial_sample(x, vocab_size, temperature):
 
 def ae_latent_softmax(latents_pred, latents_discrete, hparams):
   """Latent prediction and loss."""
-  vocab_size = hparams.v_size
-  if hparams.bottleneck_kind == "semhash":
-    vocab_size = 2**hparams.z_size
+  vocab_size = 2 ** hparams.z_size
   if hparams.num_decode_blocks < 2:
     latents_logits = tf.layers.dense(latents_pred, vocab_size,
                                      name="extra_logits")
+    if hparams.logit_normalization:
+      latents_logits *= tf.rsqrt(1e-8 +
+                                 tf.reduce_mean(tf.square(latents_logits)))
+
     loss = None
     if latents_discrete is not None:
-      loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-          labels=latents_discrete, logits=latents_logits)
+      if hparams.soft_em:
+        # latents_discrete is actually one-hot of multinomial samples
+        assert hparams.num_decode_blocks == 1
+        loss = tf.nn.softmax_cross_entropy_with_logits_v2(
+            labels=latents_discrete, logits=latents_logits)
+      else:
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=latents_discrete, logits=latents_logits)
     sample = multinomial_sample(
         latents_logits, vocab_size, hparams.sampling_temp)
     return sample, loss
@@ -225,12 +246,12 @@ def ae_latent_softmax(latents_pred, latents_discrete, hparams):
   latents_logits = [
       tf.layers.dense(
           latents_pred, block_vocab_size, name="extra_logits_%d" % i)
-      for i in xrange(hparams.num_decode_blocks)
+      for i in range(hparams.num_decode_blocks)
   ]
   loss = None
   if latents_discrete is not None:
     losses = []
-    for i in xrange(hparams.num_decode_blocks):
+    for i in range(hparams.num_decode_blocks):
       d = tf.floormod(tf.floordiv(latents_discrete,
                                   block_vocab_size**i), block_vocab_size)
       losses.append(tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -292,7 +313,7 @@ def ae_latent_sample(latents_dense, inputs, ed, embed, iters, hparams):
       return tf.concat([latents_discrete_prev[:, :(i+1), :],
                         latents_discrete[:, (i+1):, :]], axis=1)
 
-  for i in xrange(iters):
+  for i in range(iters):
     latents_discrete = next_bit(latents_discrete, i)
   return latents_discrete
 
@@ -320,8 +341,9 @@ def ae_transformer_internal(inputs,
   if inputs is not None:
     inputs = common_layers.flatten4d3d(inputs)
     inputs, ed = encode(inputs, target_space, hparams, "input_enc")
+    inputs_ex, ed_ex = inputs, ed
   else:
-    ed = None
+    ed, inputs_ex, ed_ex = None, None, None
 
   # Autoencoding.
   losses = {"extra": tf.constant(0.0), "latent_pred": tf.constant(0.0)}
@@ -338,7 +360,14 @@ def ae_transformer_internal(inputs,
     targets, _ = common_layers.pad_to_same_length(
         targets, max_targets_len_from_inputs,
         final_length_divisible_by=2**hparams.num_compress_steps)
-    targets_c = compress(targets, inputs, False, hparams, "compress")
+    if hparams.word_dropout:
+      mask = tf.random_uniform(shape=common_layers.shape_list(targets),
+                               minval=0.0, maxval=1.0)
+      targets_noisy = tf.where(mask > hparams.word_dropout, targets,
+                               tf.zeros_like(targets))
+    else:
+      targets_noisy = targets
+    targets_c = compress(targets_noisy, inputs, False, hparams, "compress")
     if hparams.mode != tf.estimator.ModeKeys.PREDICT:
       # Compress and bottleneck.
       latents_dense, latents_discrete, extra_loss, embed = hparams.bottleneck(
@@ -357,14 +386,13 @@ def ae_transformer_internal(inputs,
       # Extra loss predicting latent code from input. Discrete only.
       if hparams.bottleneck_kind not in ["dense", "vae"]:
         latents_pred = decode_transformer(
-            inputs if inputs is not None else None,
-            ed if inputs is not None else None,
+            inputs_ex, ed_ex,
             embed(latents_discrete), hparams, "extra",
             task="translate")
         _, latent_pred_loss = ae_latent_softmax(
-            latents_pred, latents_discrete, hparams)
+            latents_pred, tf.stop_gradient(latents_discrete), hparams)
         losses["latent_pred"] = tf.reduce_mean(
-            latent_pred_loss * 0.5 * tf.to_float(cond))
+            latent_pred_loss * tf.to_float(cond))
       else:
         inputs_c = decode_transformer(inputs, ed, targets_c, hparams, "dec_c")
         losses["latent_pred"] = tf.reduce_mean((inputs_c - targets_c)**2) * 20
@@ -376,9 +404,7 @@ def ae_transformer_internal(inputs,
                 name="vc",
                 mode=hparams.mode)
           return bn
-        pbn = 0.8 if hparams.mode == tf.estimator.ModeKeys.TRAIN else 1.0
-        inputs_c = tf.cond(tf.less(tf.random_uniform([]), pbn),
-                           bn_inputs, lambda: inputs_c)
+        inputs_c = bn_inputs
         ptc = 1.0 - common_layers.inverse_lin_decay(200000) * 0.5
         ptc = ptc if hparams.mode == tf.estimator.ModeKeys.TRAIN else 1.0
         latents_dense = tf.where(tf.less(tf.random_uniform([batch_size]), ptc),
@@ -398,7 +424,7 @@ def ae_transformer_internal(inputs,
         latents_dense = tf.zeros_like(targets_c[:, :latent_len, :, :])
         if cache is None:
           cache = ae_latent_sample(
-              latents_dense, inputs, ed, embed, 16, hparams)
+              latents_dense, inputs_ex, ed_ex, embed, 16, hparams)
         latents_dense = embed(cache)
     # Postprocess.
     d = latents_dense
@@ -406,6 +432,14 @@ def ae_transformer_internal(inputs,
     pos = pos[:, :common_layers.shape_list(latents_dense)[1] + 1, :, :]
     latents_dense = tf.pad(latents_dense,
                            [[0, 0], [1, 0], [0, 0], [0, 0]]) + pos
+
+    # decompressing the dense latents
+    for i in range(hparams.num_compress_steps):
+      j = hparams.num_compress_steps - i - 1
+      d = residual_conv(d, 1, (3, 1), hparams, "decompress_rc_%d" % j)
+      if hparams.do_attend_decompress:
+        d = attend(d, inputs, hparams, "decompress_attend_%d" % j)
+      d = decompress_step(d, hparams, i > 0, False, "decompress_%d" % j)
 
     # Masking.
     if hparams.do_mask:
@@ -415,29 +449,23 @@ def ae_transformer_internal(inputs,
       if not hparams.do_refine:
         masking -= tf.random_uniform([]) * hparams.unmasked_percentage
       masking = tf.minimum(tf.maximum(masking, 0.0), 1.0)
+      if hparams.use_predict_mask:
+        masking = predict_mask
       if hparams.mode == tf.estimator.ModeKeys.PREDICT:
         masking = predict_mask
       mask = tf.less(masking, tf.random_uniform(
           common_layers.shape_list(targets)[:-1]))
       mask = tf.expand_dims(tf.to_float(mask), 3)
-      for i in xrange(hparams.num_compress_steps):
-        j = hparams.num_compress_steps - i - 1
-        d = residual_conv(d, 1, (3, 1), hparams, "decompress_rc_%d" % j)
-        if hparams.do_attend_decompress:
-          d = attend(d, inputs, hparams, "decompress_attend_%d" % j)
-        d = decompress_step(d, hparams, i > 0, False, "decompress_%d" % j)
+
       # targets is always [batch, length, 1, depth]
       targets = mask * targets + (1.0 - mask) * d
       # reshape back to 4d here
       if hparams.task == "image":
         targets = tf.reshape(targets, original_targets_shape)
-    if hparams.task == "translate":
-      targets = tf.concat([tf.reverse(latents_dense, [1]), targets], axis=1)
 
-  res = decode_transformer(inputs, ed, targets, hparams, "decoder")
+  res = decode_transformer(inputs, ed, targets, hparams, "decoder",
+                           causal=hparams.causal)
   if hparams.do_ae:
-    if hparams.task == "translate":
-      res = res[:, common_layers.shape_list(latents_dense)[1]:, :, :]
     if hparams.do_mask and hparams.do_refine:
       def refine_res():
         # return residual_conv(res, 1, (5, 1), hparams, "refine")
@@ -448,7 +476,8 @@ def ae_transformer_internal(inputs,
       all_masked = tf.less(masked_batches, 0.1)
       res = tf.where(all_masked, refine_res(), res)
     # We'll start training the extra model of latents after mask_startup_steps.
-    latent_time = tf.less(hparams.mask_startup_steps,
+    nonlatent_steps = hparams.mask_startup_steps
+    latent_time = tf.less(nonlatent_steps,
                           tf.to_int32(tf.train.get_global_step()))
     losses["latent_pred"] *= tf.to_float(latent_time)
   return res, losses, cache
@@ -463,7 +492,7 @@ class TransformerAE(t2t_model.T2TModel):
     self.predict_mask = 1.0
 
     # Define bottleneck function
-    self._hparams.bottleneck = partial(
+    self._hparams.bottleneck = functools.partial(
         discretization.discrete_bottleneck,
         hidden_size=self._hparams.hidden_size,
         z_size=self._hparams.z_size,
@@ -471,6 +500,7 @@ class TransformerAE(t2t_model.T2TModel):
         startup_steps=self.hparams.startup_steps,
         bottleneck_kind=self._hparams.bottleneck_kind,
         num_blocks=self._hparams.num_blocks,
+        num_residuals=self.hparams.num_residuals,
         reshape_method=self._hparams.reshape_method,
         beta=self._hparams.beta,
         noise_dev=self._hparams.noise_dev,
@@ -478,22 +508,17 @@ class TransformerAE(t2t_model.T2TModel):
         discrete_mix=self._hparams.d_mix,
         random_top_k=self._hparams.random_top_k,
         soft_em=self.hparams.soft_em,
-        inv_temp=self.hparams.inv_temp,
+        num_samples=self.hparams.num_samples,
         epsilon=self._hparams.epsilon,
         softmax_k=self._hparams.softmax_k,
         kl_warmup_steps=self._hparams.kl_warmup_steps,
         ema=self._hparams.ema,
-        summary=_DO_SUMMARIES,
-        dp_strength=self._hparams.dp_strength,
-        dp_decay=self._hparams.dp_decay,
-        dp_alpha=self._hparams.dp_alpha,
-        slo=self._hparams.slo,
-        slo_alpha=self._hparams.slo_alpha,
-        slo_beta=self._hparams.slo_beta)
+        summary=_DO_SUMMARIES)
     # Set the discretization bottleneck specific things here
     if self._hparams.bottleneck_kind == "dvq":
+      z_size_per_residual = self._hparams.z_size / self._hparams.num_residuals
       block_dim = int(self._hparams.hidden_size // self._hparams.num_blocks)
-      block_v_size = 2**(self._hparams.z_size / self._hparams.num_blocks)
+      block_v_size = 2**(z_size_per_residual / self._hparams.num_blocks)
       block_v_size = int(block_v_size)
 
       if self._hparams.reshape_method == "project":
@@ -504,47 +529,54 @@ class TransformerAE(t2t_model.T2TModel):
         projection_tensors = tf.get_variable(
             name="projection",
             shape=[
-                self._hparams.num_blocks, self._hparams.hidden_size, block_dim
+                self._hparams.num_residuals, self._hparams.num_blocks,
+                self._hparams.hidden_size, block_dim
             ],
             initializer=tf.contrib.layers.xavier_initializer(),
             trainable=self._hparams.trainable_projections)
 
-        self._hparams.bottleneck = partial(
+        self._hparams.bottleneck = functools.partial(
             self._hparams.bottleneck, projection_tensors=projection_tensors)
       elif self._hparams.reshape_method == "slice":
         tf.logging.info("Using slices for DVQ")
       else:
         raise ValueError("Unknown reshape method")
+
       means = tf.get_variable(
           name="means",
-          shape=[self._hparams.num_blocks, block_v_size, block_dim],
+          shape=[
+              self._hparams.num_residuals, self._hparams.num_blocks,
+              block_v_size, block_dim
+          ],
           initializer=tf.uniform_unit_scaling_initializer())
 
       # Create the shadow variables if we are using EMA
+      ema_count = None
+      ema_means = None
       if self._hparams.ema:
-        ema_count = tf.get_variable(
-            "ema_count", [self._hparams.num_blocks, block_v_size],
-            initializer=tf.constant_initializer(0),
-            trainable=False)
-        with tf.colocate_with(means):
-          ema_means = tf.get_variable(
-              "ema_means", initializer=means.initialized_value(),
+        ema_count = []
+        for i in range(self._hparams.num_residuals):
+          ema_count_i = tf.get_variable(
+              "ema_count_{}".format(i),
+              [self._hparams.num_blocks, block_v_size],
+              initializer=tf.constant_initializer(0),
               trainable=False)
+          ema_count.append(ema_count_i)
+        with tf.colocate_with(means):
+          ema_means = []
+          for i in range(self._hparams.num_residuals):
+            ema_means_i = tf.get_variable(
+                "ema_means_{}".format(i),
+                initializer=means.initialized_value()[i],
+                trainable=False)
+            ema_means.append(ema_means_i)
 
-        # Create the shadow variables if we are using smoothed l0
-        c_logits = None
-        if self._hparams.slo:
-          # softmax logits for the cluster probabilities
-          c_logits = tf.get_variable(
-              "c_logits", [self._hparams.num_blocks, block_v_size],
-              initializer=tf.uniform_unit_scaling_initializer())
-        # Update bottleneck
-        self._hparams.bottleneck = partial(
-            self._hparams.bottleneck,
-            means=means,
-            ema_count=ema_count,
-            ema_means=ema_means,
-            c_logits=c_logits)
+      # Update bottleneck
+      self._hparams.bottleneck = functools.partial(
+          self._hparams.bottleneck,
+          means=means,
+          ema_count=ema_count,
+          ema_means=ema_means)
 
   @property
   def has_input(self):
@@ -581,11 +613,12 @@ class TransformerAE(t2t_model.T2TModel):
     features["cache_raw"] = cache
 
   def infer(self, features=None, decode_length=50, beam_size=1, top_beams=1,
-            alpha=0.0):
+            alpha=0.0, use_tpu=False):
     """Produce predictions from the model."""
     if not self._hparams.do_mask:
-      return super(TransformerAE, self).infer(
-          features, decode_length, beam_size, top_beams, alpha)["outputs"]
+      infer_out = super(TransformerAE, self).infer(
+          features, decode_length, beam_size, top_beams, alpha, use_tpu=use_tpu)
+      return infer_out["outputs"]
     if not features:
       features = {}
     inputs_old = None
@@ -610,7 +643,7 @@ class TransformerAE(t2t_model.T2TModel):
     # More steps.
     self.predict_mask = 0.0  # Use the provided targets this time.
     how_many_more_steps = 0  # Set to 1 or more for Gibbs-like sampling.
-    for _ in xrange(how_many_more_steps):
+    for _ in range(how_many_more_steps):
       with tf.variable_scope(tf.get_variable_scope(), reuse=True):
         features["targets"] = samples
         logits, _ = self(features)  # pylint: disable=not-callable
@@ -641,23 +674,22 @@ def transformer_ae_small():
   hparams.add_hparam("z_size", 14)
   hparams.add_hparam("noise_dev", 0.5)
   hparams.add_hparam("d_mix", 0.5)
+  hparams.add_hparam("logit_normalization", True)
+  hparams.add_hparam("word_dropout", 0.1)
   # Bottleneck kinds supported: dense, vae, semhash, gumbel-softmax, dvq.
   hparams.add_hparam("bottleneck_kind", "semhash")
   hparams.add_hparam("num_blocks", 1)
   hparams.add_hparam("num_decode_blocks", 1)
+  # Add an hparam for number of reiduals
+  hparams.add_hparam("num_residuals", 1)
   # Reshape method for DVQ: slice, project
+  hparams.add_hparam("causal", True)
   hparams.add_hparam("reshape_method", "slice")
   hparams.add_hparam("trainable_projections", False)
-  # Hparams for Dirichlet process process
-  hparams.add_hparam("dp_alpha", 0.5)
-  hparams.add_hparam("dp_strength", 0.25)
-  hparams.add_hparam("dp_decay", 1.0)
-  hparams.add_hparam("slo", False)  # for smoothed L0.
-  hparams.add_hparam("slo_alpha", 0.25)
-  hparams.add_hparam("slo_beta", 0.5)
   hparams.add_hparam("unmasked_percentage", 0.1)
   hparams.add_hparam("do_ae", True)
   hparams.add_hparam("do_mask", True)
+  hparams.add_hparam("use_predict_mask", True)
   hparams.add_hparam("do_refine", False)
   hparams.add_hparam("do_attend_compress", False)
   hparams.add_hparam("do_attend_decompress", True)
@@ -668,7 +700,6 @@ def transformer_ae_small():
   hparams.add_hparam("num_compress_steps", 3)
   hparams.add_hparam("startup_steps", 10000)
   hparams.add_hparam("mask_startup_steps", 50000)
-  hparams.add_hparam("kmeans_lr_factor", 0.002)
   hparams.add_hparam("z_dropout", 0.1)
   hparams.add_hparam("is_2d", 0)
   hparams.add_hparam("softmax_k", 0)
@@ -681,6 +712,7 @@ def transformer_ae_small():
   hparams.add_hparam("ema", True)
   hparams.add_hparam("random_top_k", 1)
   hparams.add_hparam("soft_em", False)
+  hparams.add_hparam("num_samples", 10)
   hparams.add_hparam("inv_temp", 1.0)
   hparams.kl_warmup_steps = 150000
   hparams.force_full_predict = True
@@ -696,9 +728,7 @@ def imagetransformer_ae_cifar():
   hparams = transformer_ae_small()
   hparams.filter_size = 512
   hparams.num_compress_steps = 3
-  hparams.v_size = 1024 * 64
   hparams.startup_steps = 10000
-  hparams.kmeans_lr_factor = 0.0
   hparams.is_2d = 0
   hparams.learning_rate_warmup_steps = 8000
   hparams.learning_rate = 0.2
@@ -747,7 +777,7 @@ def imagetransformer_ae_cifar():
   hparams.num_decoder_layers = 12
   hparams.sep_rgb_embed = False
   hparams.add_hparam("dec_attention_type", cia.AttentionType.LOCAL_1D)
-  hparams.add_hparam("block_rastor_scan", False)
+  hparams.add_hparam("block_raster_scan", False)
 
   # multipos attention params
   hparams.add_hparam("q_filter_width", 1)

@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Base classes and utilities for image datasets."""
 
 from __future__ import absolute_import
@@ -20,24 +19,77 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_encoder
+from tensor2tensor.layers import common_layers
 from tensor2tensor.utils import metrics
 from tensor2tensor.utils import registry
 
 import tensorflow as tf
-
-from tensorflow.python.eager import context
 
 
 def resize_by_area(img, size):
   """image resize function used by quite a few image problems."""
   return tf.to_int64(
       tf.image.resize_images(img, [size, size], tf.image.ResizeMethod.AREA))
+
+
+def make_multiscale(image, resolutions,
+                    resize_method=tf.image.ResizeMethod.BICUBIC,
+                    num_channels=3):
+  """Returns list of scaled images, one for each resolution.
+
+  Args:
+    image: Tensor of shape [height, height, num_channels].
+    resolutions: List of heights that image's height is resized to.
+    resize_method: tf.image.ResizeMethod.
+    num_channels: Number of channels in image.
+
+  Returns:
+    List of Tensors, one for each resolution with shape given by
+    [resolutions[i], resolutions[i], num_channels].
+  """
+  scaled_images = []
+  for height in resolutions:
+    scaled_image = tf.image.resize_images(
+        image,
+        size=[height, height],  # assuming that height = width
+        method=resize_method)
+    scaled_image = tf.to_int64(scaled_image)
+    scaled_image.set_shape([height, height, num_channels])
+    scaled_images.append(scaled_image)
+
+  return scaled_images
+
+
+def make_multiscale_dilated(image, resolutions, num_channels=3):
+  """Returns list of scaled images, one for each resolution.
+
+  Resizes by skipping every nth pixel.
+
+  Args:
+    image: Tensor of shape [height, height, num_channels].
+    resolutions: List of heights that image's height is resized to. The function
+      assumes VALID padding, so the original image's height must be divisible
+      by each resolution's height to return the exact resolution size.
+    num_channels: Number of channels in image.
+
+  Returns:
+    List of Tensors, one for each resolution with shape given by
+    [resolutions[i], resolutions[i], num_channels] if resolutions properly
+    divide the original image's height; otherwise shape height and width is up
+    to valid skips.
+  """
+  image_height = common_layers.shape_list(image)[0]
+  scaled_images = []
+  for height in resolutions:
+    dilation_rate = image_height // height  # assuming height = width
+    scaled_image = image[::dilation_rate, ::dilation_rate]
+    scaled_image = tf.to_int64(scaled_image)
+    scaled_image.set_shape([None, None, num_channels])
+    scaled_images.append(scaled_image)
+  return scaled_images
 
 
 class ImageProblem(problem.Problem):
@@ -48,7 +100,7 @@ class ImageProblem(problem.Problem):
     """Number of color channels."""
     return 3
 
-  def example_reading_spec(self, label_repr=None):
+  def example_reading_spec(self):
     data_fields = {
         "image/encoded": tf.FixedLenFeature((), tf.string),
         "image/format": tf.FixedLenFeature((), tf.string),
@@ -105,7 +157,7 @@ class Image2ClassProblem(ImageProblem):
   def feature_encoders(self, data_dir):
     del data_dir
     return {
-        "inputs": text_encoder.ImageEncoder(),
+        "inputs": text_encoder.ImageEncoder(channels=self.num_channels),
         "targets": text_encoder.ClassLabelEncoder(self.class_labels)
     }
 
@@ -141,14 +193,15 @@ class Image2ClassProblem(ImageProblem):
         self.dev_filepaths(data_dir, self.dev_shards, shuffled=False))
 
 
-def _encoded_images(images):
-  if context.in_eager_mode():
+def encode_images_as_png(images):
+  """Yield images encoded as pngs."""
+  if tf.contrib.eager.in_eager_mode():
     for image in images:
       yield tf.image.encode_png(image).numpy()
   else:
-    (width, height, channels) = images[0].shape
+    (height, width, channels) = images[0].shape
     with tf.Graph().as_default():
-      image_t = tf.placeholder(dtype=tf.uint8, shape=(width, height, channels))
+      image_t = tf.placeholder(dtype=tf.uint8, shape=(height, width, channels))
       encoded_image_t = tf.image.encode_png(image_t)
       with tf.Session() as sess:
         for image in images:
@@ -178,7 +231,7 @@ def image_generator(images, labels):
   if not images:
     raise ValueError("Must provide some images for the generator.")
   width, height, _ = images[0].shape
-  for (enc_image, label) in zip(_encoded_images(images), labels):
+  for (enc_image, label) in zip(encode_images_as_png(images), labels):
     yield {
         "image/encoded": [enc_image],
         "image/format": ["png"],
@@ -230,7 +283,7 @@ class Image2TextProblem(ImageProblem):
       vocab_filename = os.path.join(
           data_dir, "vocab.ende.%d" % self.targeted_vocab_size)
       encoder = text_encoder.SubwordTextEncoder(vocab_filename)
-    input_encoder = text_encoder.ImageEncoder()
+    input_encoder = text_encoder.ImageEncoder(channels=self.num_channels)
     return {"inputs": input_encoder, "targets": encoder}
 
   def hparams(self, defaults, unused_model_hparams):

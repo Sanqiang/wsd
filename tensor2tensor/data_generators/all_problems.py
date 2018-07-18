@@ -12,51 +12,104 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Imports for problem modules."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# pylint: disable=unused-import
-from tensor2tensor.data_generators import algorithmic
-from tensor2tensor.data_generators import algorithmic_math
-from tensor2tensor.data_generators import audio
-from tensor2tensor.data_generators import celeba
-from tensor2tensor.data_generators import cifar
-from tensor2tensor.data_generators import cipher
-from tensor2tensor.data_generators import cnn_dailymail
-from tensor2tensor.data_generators import desc2code
-from tensor2tensor.data_generators import fsns
-from tensor2tensor.data_generators import gym
-from tensor2tensor.data_generators import ice_parsing
-from tensor2tensor.data_generators import imagenet
-from tensor2tensor.data_generators import imdb
-from tensor2tensor.data_generators import librispeech
-from tensor2tensor.data_generators import lm1b
-from tensor2tensor.data_generators import mnist
-from tensor2tensor.data_generators import mscoco
-from tensor2tensor.data_generators import multinli
-from tensor2tensor.data_generators import ocr
-from tensor2tensor.data_generators import problem_hparams
-from tensor2tensor.data_generators import ptb
-from tensor2tensor.data_generators import snli
-from tensor2tensor.data_generators import translate_encs
-from tensor2tensor.data_generators import translate_ende
-from tensor2tensor.data_generators import translate_enfr
-from tensor2tensor.data_generators import translate_enmk
-from tensor2tensor.data_generators import translate_enzh
-from tensor2tensor.data_generators import twentybn
-from tensor2tensor.data_generators import wiki
-from tensor2tensor.data_generators import wsj_parsing
+import importlib
+import six
+
+MODULES = [
+    "tensor2tensor.data_generators.algorithmic",
+    "tensor2tensor.data_generators.algorithmic_math",
+    "tensor2tensor.data_generators.audio",
+    "tensor2tensor.data_generators.babi_qa",
+    "tensor2tensor.data_generators.bair_robot_pushing",
+    "tensor2tensor.data_generators.celeba",
+    "tensor2tensor.data_generators.cifar",
+    "tensor2tensor.data_generators.cipher",
+    "tensor2tensor.data_generators.cnn_dailymail",
+    "tensor2tensor.data_generators.cola",
+    "tensor2tensor.data_generators.common_voice",
+    "tensor2tensor.data_generators.desc2code",
+    "tensor2tensor.data_generators.fsns",
+    "tensor2tensor.data_generators.gene_expression",
+    "tensor2tensor.data_generators.google_robot_pushing",
+    "tensor2tensor.data_generators.gym_problems_specs",
+    "tensor2tensor.data_generators.ice_parsing",
+    "tensor2tensor.data_generators.imagenet",
+    "tensor2tensor.data_generators.image_lsun",
+    "tensor2tensor.data_generators.imdb",
+    "tensor2tensor.data_generators.lambada",
+    "tensor2tensor.data_generators.librispeech",
+    "tensor2tensor.data_generators.lm1b",
+    "tensor2tensor.data_generators.lm1b_imdb",
+    "tensor2tensor.data_generators.mnist",
+    "tensor2tensor.data_generators.mscoco",
+    "tensor2tensor.data_generators.multinli",
+    "tensor2tensor.data_generators.program_search",
+    "tensor2tensor.data_generators.ocr",
+    "tensor2tensor.data_generators.problem_hparams",
+    "tensor2tensor.data_generators.ptb",
+    "tensor2tensor.data_generators.qnli",
+    "tensor2tensor.data_generators.quora_qpairs",
+    "tensor2tensor.data_generators.rte",
+    "tensor2tensor.data_generators.snli",
+    "tensor2tensor.data_generators.style_transfer",
+    "tensor2tensor.data_generators.squad",
+    "tensor2tensor.data_generators.sst_binary",
+    "tensor2tensor.data_generators.subject_verb_agreement",
+    "tensor2tensor.data_generators.timeseries",
+    "tensor2tensor.data_generators.translate_encs",
+    "tensor2tensor.data_generators.translate_ende",
+    "tensor2tensor.data_generators.translate_enet",
+    "tensor2tensor.data_generators.translate_enfr",
+    "tensor2tensor.data_generators.translate_enid",
+    "tensor2tensor.data_generators.translate_enmk",
+    "tensor2tensor.data_generators.translate_envi",
+    "tensor2tensor.data_generators.translate_enzh",
+    "tensor2tensor.data_generators.twentybn",
+    "tensor2tensor.data_generators.video_generated",
+    "tensor2tensor.data_generators.wiki",
+    "tensor2tensor.data_generators.wikisum.wikisum",
+    "tensor2tensor.data_generators.wikitext103",
+    "tensor2tensor.data_generators.wsj_parsing",
+    "tensor2tensor.data_generators.wnli",
+]
+ALL_MODULES = list(MODULES)
 
 
-# Problem modules that require optional dependencies
-# pylint: disable=g-import-not-at-top
-try:
-  # Requires h5py
-  from tensor2tensor.data_generators import gene_expression
-except ImportError:
-  pass
-# pylint: enable=g-import-not-at-top
-# pylint: enable=unused-import
+
+def _py_err_msg(module):
+  if six.PY2:
+    msg = "No module named %s" % module.split(".")[-1]
+  else:
+    msg = "No module named '%s'" % module
+  return msg
+
+
+def _handle_errors(errors):
+  """Log out and possibly reraise errors during import."""
+  if not errors:
+    return
+  log_all = True  # pylint: disable=unused-variable
+  err_msg = "Skipped importing {num_missing} data_generators modules."
+  print(err_msg.format(num_missing=len(errors)))
+  for module, err in errors:
+    err_str = str(err)
+    if err_str != _py_err_msg(module):
+      print("From module %s" % module)
+      raise err
+    if log_all:
+      print("Did not import module: %s; Cause: %s" % (module, err_str))
+
+
+def import_modules(modules):
+  errors = []
+  for module in modules:
+    try:
+      importlib.import_module(module)
+    except ImportError as error:
+      errors.append((module, error))
+  _handle_errors(errors)

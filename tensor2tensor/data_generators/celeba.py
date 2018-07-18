@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """CelebA."""
 
 from __future__ import absolute_import
@@ -21,9 +20,6 @@ from __future__ import print_function
 
 import os
 import zipfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import image_utils
 from tensor2tensor.utils import registry
@@ -124,7 +120,7 @@ class ImageCeleba(image_utils.ImageProblem):
       landmarks = img_landmarks[img_name]
       attrs = img_attrs[img_name]
 
-      with tf.gfile.Open(filename, "r") as f:
+      with tf.gfile.Open(filename, "rb") as f:
         encoded_image_data = f.read()
         yield {
             "image/encoded": [encoded_image_data],
@@ -147,6 +143,49 @@ class ImageCeleba(image_utils.ImageProblem):
         self.training_filepaths(data_dir, self.train_shards, shuffled=False),
         self.generator(tmp_dir, 19867, 162770),  # dev
         self.dev_filepaths(data_dir, self.dev_shards, shuffled=False))
+
+
+@registry.register_problem
+class ImageCelebaMultiResolution(ImageCeleba):
+  """CelebA at multiple resolutions.
+
+  The resolutions are specified as a hyperparameter during preprocessing.
+  """
+
+  def dataset_filename(self):
+    return "image_celeba"
+
+  def preprocess_example(self, example, mode, hparams):
+    image = example["inputs"]
+    # Get resize method. Include a default if not specified, or if it's not in
+    # TensorFlow's collection of pre-implemented resize methods.
+    resize_method = getattr(hparams, "resize_method", "BICUBIC")
+    resize_method = getattr(tf.image.ResizeMethod, resize_method, resize_method)
+
+    # Remove boundaries in CelebA images. Remove 40 pixels each side
+    # vertically and 20 pixels each side horizontally.
+    image = tf.image.crop_to_bounding_box(image, 40, 20, 218 - 80, 178 - 40)
+
+    highest_res = hparams.resolutions[-1]
+    if resize_method == "DILATED":
+      # Resize image so that dilated subsampling is properly divisible.
+      scaled_image = image_utils.resize_by_area(image, highest_res)
+      scaled_images = image_utils.make_multiscale_dilated(
+          scaled_image, hparams.resolutions, num_channels=self.num_channels)
+    else:
+      scaled_images = image_utils.make_multiscale(
+          image, hparams.resolutions,
+          resize_method=resize_method, num_channels=self.num_channels)
+
+    # Pack tuple of scaled images into one tensor. We do this by enforcing the
+    # columns to match for every resolution.
+    example["inputs"] = image
+    example["targets"] = tf.concat([
+        tf.reshape(scaled_image,
+                   [res**2 // highest_res, highest_res, self.num_channels])
+        for scaled_image, res in zip(scaled_images, hparams.resolutions)],
+                                   axis=0)
+    return example
 
 
 @registry.register_problem

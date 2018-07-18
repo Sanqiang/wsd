@@ -12,17 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Optimization."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
 import numpy as np
 
+from tensor2tensor.layers import common_layers
 from tensor2tensor.utils import adafactor
+from tensor2tensor.utils import multistep_optimizer
 from tensor2tensor.utils import yellowfin
 
 import tensorflow as tf
@@ -45,10 +43,10 @@ def optimize(loss, learning_rate, hparams, use_tpu=False):
     opt = tf.contrib.tpu.CrossShardOptimizer(opt)
 
   tf.summary.scalar("learning_rate", learning_rate)
-  opt_summaries = ["loss", "global_gradient_norm"]
+  opt_summaries = ["loss"]
   if hparams.summarize_grads:
     tf.logging.info("Summarizing gradients")
-    opt_summaries.extend(["gradients", "gradient_norm"])
+    opt_summaries.extend(["gradients", "gradient_norm", "global_gradient_norm"])
 
   if hparams.clip_grad_norm:
     tf.logging.info("Clipping gradients, norm: %0.5f", hparams.clip_grad_norm)
@@ -72,7 +70,7 @@ def optimize(loss, learning_rate, hparams, use_tpu=False):
 class ConditionalOptimizer(tf.train.Optimizer):
   """Conditional optimizer."""
 
-  def __init__(self, optimizer_name, lr, hparams, use_tpu=False):
+  def __init__(self, optimizer_name, lr, hparams, use_tpu=False):  # pylint: disable=super-init-not-called
     if optimizer_name == "Adam" and use_tpu:
       # LazyAdamOptimizer does not work on TPU
       optimizer_name = "TrueAdam"
@@ -87,6 +85,13 @@ class ConditionalOptimizer(tf.train.Optimizer):
           beta1=hparams.optimizer_adam_beta1,
           beta2=hparams.optimizer_adam_beta2,
           epsilon=hparams.optimizer_adam_epsilon)
+    elif optimizer_name == "MultistepAdam":
+      self._opt = multistep_optimizer.MultistepAdamOptimizer(
+          lr,
+          beta1=hparams.optimizer_adam_beta1,
+          beta2=hparams.optimizer_adam_beta2,
+          epsilon=hparams.optimizer_adam_epsilon,
+          n=hparams.optimizer_multistep_accumulate_steps)
     elif optimizer_name == "Momentum":
       self._opt = tf.train.MomentumOptimizer(
           lr,
@@ -106,8 +111,14 @@ class ConditionalOptimizer(tf.train.Optimizer):
     else:
       self._opt = tf.contrib.layers.OPTIMIZER_CLS_NAMES[optimizer_name](lr)
 
-  def compute_gradients(self, loss, var_list=None, **kwargs):
-    return self._opt.compute_gradients(loss, var_list, **kwargs)
+  def compute_gradients(self, loss, var_list=None, **kwargs):  # pylint: disable=arguments-differ
+    gradients = self._opt.compute_gradients(loss, var_list, **kwargs)
+    def cast_grad(g, v):
+      if v is not None and g is not None:
+        g = common_layers.cast_like(g, v)
+      return (g, v)
+    gradients = [cast_grad(g, v) for g, v in gradients]
+    return gradients
 
   def apply_gradients(self, grads_and_vars, global_step=None, name=None):
     return self._opt.apply_gradients(
@@ -123,7 +134,8 @@ def weight_decay_and_noise(loss, hparams, learning_rate, var_list=None):
   noise_vars = [v for v in var_list if "/body/" in v.name]
 
   weight_decay_loss = weight_decay(hparams.weight_decay, decay_vars)
-  tf.summary.scalar("losses/weight_decay", weight_decay_loss)
+  if hparams.weight_decay:
+    tf.summary.scalar("losses/weight_decay", weight_decay_loss)
   weight_noise_ops = weight_noise(hparams.weight_noise, learning_rate,
                                   noise_vars)
 
@@ -209,7 +221,8 @@ def get_variable_initializer(hparams):
   if not hparams.initializer:
     return None
 
-  tf.logging.info("Using variable initializer: %s", hparams.initializer)
+  if not tf.contrib.eager.in_eager_mode():
+    tf.logging.info("Using variable initializer: %s", hparams.initializer)
   if hparams.initializer == "orthogonal":
     return tf.orthogonal_initializer(gain=hparams.initializer_gain)
   elif hparams.initializer == "uniform":
@@ -221,6 +234,7 @@ def get_variable_initializer(hparams):
   elif hparams.initializer == "uniform_unit_scaling":
     return tf.variance_scaling_initializer(
         hparams.initializer_gain, mode="fan_avg", distribution="uniform")
+  elif hparams.initializer == "xavier":
+    return tf.contrib.layers.xavier_initializer()
   else:
     raise ValueError("Unrecognized initializer: %s" % hparams.initializer)
-

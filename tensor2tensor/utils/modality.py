@@ -12,16 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Modality base class - defines the bottom and top of the model."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import re
-
-# Dependency imports
-
 from tensor2tensor.layers import common_layers
 from tensor2tensor.utils import registry
 
@@ -56,6 +52,8 @@ class Modality(object):
 
   def __init__(self, model_hparams, vocab_size=None):
     self._model_hparams = model_hparams
+    if vocab_size is not None and hasattr(model_hparams, "vocab_divisor"):
+      vocab_size += (0 - vocab_size) % model_hparams.vocab_divisor
     self._vocab_size = vocab_size
 
   @property

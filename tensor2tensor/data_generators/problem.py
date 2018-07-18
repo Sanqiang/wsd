@@ -12,15 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Base class for problem/dataset definitions."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 import collections
+import functools
 import os
 import random
-# Dependency imports
+
 import six
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import text_encoder
@@ -100,6 +100,28 @@ class SpaceID(object):
   STROKES = 29
   # Pickled Python
   PICKLED_PYTHON = 30
+
+
+class TaskID(object):
+  """Problem specific task ids. Add more as needed."""
+  # English characters
+  EN_CHR = 0
+  # English characters sentiment
+  EN_CHR_SENT = 1
+  # English Premise Hypothesis pair
+  EN_PR_HYP = 2
+  # English NLI
+  EN_NLI = 3
+  # COLA
+  COLA = 4
+  # Enligh Question Context pair
+  EN_Q_CONT = 5
+  # English similarity task
+  EN_SIM = 6
+  # English sentence pair
+  EN_SENT_PAIR = 7
+  # 3 class NLI
+  THREE_CL_NLI = 8
 
 
 def default_model_hparams():
@@ -255,7 +277,7 @@ class Problem(object):
     Returns:
       an integer
     """
-    if self.batch_size_means_tokens:
+    if self.batch_size_means_tokens and not model_hparams.use_fixed_batch_size:
       return model_hparams.batch_size // self.max_length(model_hparams)
     else:
       return model_hparams.batch_size
@@ -322,6 +344,33 @@ class Problem(object):
   # ============================================================================
   # END SUBCLASS INTERFACE
   # ============================================================================
+
+  def preprocess(self, dataset, mode, hparams):
+    """Runtime preprocessing on the whole dataset.
+
+    Return a tf.data.Datset -- the preprocessed version of the given one.
+    By default this function calls preprocess_example.
+
+    Args:
+      dataset: the Dataset of already decoded but not yet preprocessed features.
+      mode: tf.estimator.ModeKeys
+      hparams: HParams, model hyperparameters
+
+    Returns:
+      a Dataset
+    """
+    def _preprocess(example):
+      examples = self.preprocess_example(example, mode, hparams)
+      if not isinstance(examples, tf.data.Dataset):
+        examples = tf.data.Dataset.from_tensors(examples)
+      return examples
+
+    is_training = mode == tf.estimator.ModeKeys.TRAIN
+    dataset = dataset.apply(
+        tf.contrib.data.parallel_interleave(
+            _preprocess, sloppy=is_training, cycle_length=8))
+
+    return dataset
 
   def training_filepaths(self, data_dir, num_shards, shuffled):
     file_basename = self.dataset_filename()
@@ -399,7 +448,8 @@ class Problem(object):
       return self._hparams
 
     if self._encoders is None:
-      data_dir = (model_hparams and model_hparams.data_dir) or None
+      data_dir = (model_hparams and hasattr(model_hparams, "data_dir") and
+                  model_hparams.data_dir) or None
       self.get_feature_encoders(data_dir)
 
     hp = _default_hparams()
@@ -448,6 +498,11 @@ class Problem(object):
         "targets_position" not in feature_map):
       feature_map["targets_position"] = feature_map["inputs_position"]
 
+  def maybe_reverse_and_copy(self, example):
+    self.maybe_reverse_features(example)
+    self.maybe_copy_features(example)
+    return example
+
   def dataset(self,
               mode,
               data_dir=None,
@@ -459,7 +514,8 @@ class Problem(object):
               dataset_split=None,
               shard=None,
               partition_id=0,
-              num_partitions=1):
+              num_partitions=1,
+              max_records=-1):
     """Build a Dataset for this problem.
 
     Args:
@@ -480,6 +536,7 @@ class Problem(object):
       shard: int, if provided, will only read data from the specified shard.
       partition_id: integer - which partition of the dataset to read from
       num_partitions: how many partitions in the dataset
+      max_records: int, number of records to truncate to.
 
     Returns:
       Dataset containing dict<feature name, Tensor>.
@@ -505,24 +562,21 @@ class Problem(object):
 
     data_filepattern = self.filepattern(data_dir, dataset_split, shard=shard)
     tf.logging.info("Reading data files from %s", data_filepattern)
-    data_files = tf.contrib.slim.parallel_reader.get_data_files(
-        data_filepattern)
+    data_files = sorted(tf.contrib.slim.parallel_reader.get_data_files(
+        data_filepattern))
 
-    # Functions used in dataset transforms below
-    def _load_records(filename):
-      # Load records from file with an 8MiB read buffer.
-      return tf.data.TFRecordDataset(filename, buffer_size=8 * 1024 * 1024)
-
-    def _preprocess(example):
-      examples = self.preprocess_example(example, mode, hparams)
-      if not isinstance(examples, tf.data.Dataset):
-        examples = tf.data.Dataset.from_tensors(examples)
-      return examples
-
-    def _maybe_reverse_and_copy(example):
-      self.maybe_reverse_features(example)
-      self.maybe_copy_features(example)
-      return example
+    # Functions used in dataset transforms below. `filenames` can be either a
+    # `tf.string` tensor or `tf.data.Dataset` containing one or more filenames.
+    def _load_records_and_preprocess(filenames):
+      # Load records from file(s) with an 8MiB read buffer.
+      dataset = tf.data.TFRecordDataset(filenames, buffer_size=8 * 1024 * 1024)
+      # Decode.
+      dataset = dataset.map(self.decode_example, num_parallel_calls=num_threads)
+      # Preprocess if requested.
+      # Note that preprocessing should happen per-file as order may matter.
+      if preprocess:
+        dataset = self.preprocess(dataset, mode, hparams)
+      return dataset
 
     if len(data_files) < num_partitions:
       raise ValueError(
@@ -534,28 +588,29 @@ class Problem(object):
         "partition: %d num_data_files: %d" % (partition_id, len(data_files)))
     if shuffle_files:
       random.shuffle(data_files)
-    dataset = tf.data.Dataset.from_tensor_slices(tf.constant(data_files))
 
-    if hasattr(tf.contrib.data, "parallel_interleave"):
+    dataset = tf.data.Dataset.from_tensor_slices(tf.constant(data_files))
+    # Create data-set from files by parsing, pre-processing and interleaving.
+    if shuffle_files:
       dataset = dataset.apply(
           tf.contrib.data.parallel_interleave(
-              _load_records, sloppy=is_training, cycle_length=8))
+              _load_records_and_preprocess, sloppy=True, cycle_length=8))
     else:
-      dataset = dataset.interleave(_load_records, cycle_length=8,
-                                   block_length=16)
+      # TFRecordDataset can get filenames as dataset in TF 1.7+.
+      # TODO(lukaszkaiser): remove when we require TF 1.7+ in general.
+      major, minor = [int(el) for el in tf.__version__.split(".")[:2]]
+      filename_dataset_ok = major > 1 or (major == 1 and minor >= 7)
+      if filename_dataset_ok:  # We can just pass a Dataset of filenames.
+        dataset = _load_records_and_preprocess(dataset)
+      else:  # Go file-by-file (can be very slow).
+        dataset = None
+        for f in data_files:
+          f_data = _load_records_and_preprocess(f)
+          dataset = f_data if dataset is None else dataset.concatenate(f_data)
 
-    dataset = dataset.map(self.decode_example, num_parallel_calls=num_threads)
-    if preprocess:
-      if hasattr(tf.contrib.data, "parallel_interleave"):
-        dataset = dataset.apply(
-            tf.contrib.data.parallel_interleave(
-                _preprocess, sloppy=is_training, cycle_length=8))
-      else:
-        dataset = dataset.interleave(_preprocess, cycle_length=8,
-                                     block_length=16)
     dataset = dataset.map(
-        _maybe_reverse_and_copy, num_parallel_calls=num_threads)
-
+        self.maybe_reverse_and_copy, num_parallel_calls=num_threads)
+    dataset = dataset.take(max_records)
     if output_buffer_size:
       dataset = dataset.prefetch(output_buffer_size)
 
@@ -564,6 +619,9 @@ class Problem(object):
   def decode_example(self, serialized_example):
     """Return a dict of Tensors from a serialized tensorflow.Example."""
     data_fields, data_items_to_decoders = self.example_reading_spec()
+    # Necessary to rejoin examples in the correct order with the Cloud ML Engine
+    # batch prediction API.
+    data_fields["batch_prediction_key"] = tf.FixedLenFeature([1], tf.int64, 0)
     if data_items_to_decoders is None:
       data_items_to_decoders = {
           field: tf.contrib.slim.tfexample_decoder.Tensor(field)
@@ -573,9 +631,20 @@ class Problem(object):
     decoder = tf.contrib.slim.tfexample_decoder.TFExampleDecoder(
         data_fields, data_items_to_decoders)
 
-    decode_items = list(data_items_to_decoders)
+    decode_items = list(sorted(data_items_to_decoders))
     decoded = decoder.decode(serialized_example, items=decode_items)
     return dict(zip(decode_items, decoded))
+
+  @property
+  def decode_hooks(self):
+    """List of functions to be run after full decodes have been produced.
+
+    Returns:
+      List of functions. Each function should expect a single argument, an
+      instance of decoding.DecodeHookArgs and optionally return a list of
+      tf.Summary.Value objects.
+    """
+    return []
 
   @property
   def has_inputs(self):
@@ -662,6 +731,14 @@ class Problem(object):
       # Reset in the case when using TPU but alternating TRAIN and EVAL.
       self._next_partition_id = 0
       return 0, 1
+    # BEGIN GOOGLE-INTERNAL
+    # make mesh-tensorflow on TPU work with patch CL/202825176
+    # TODO(ylc): fix this once TPU estimator changes are checked in.
+    if getattr(config.tpu_config, "symmetric_sharding_enabled", False):
+      tf.logging.info("symmetric_sharding_enabled")
+      self._next_partition_id = 0
+      return 0, 1
+    # END GOOOGLE-INTERNAL
     if config.tpu_config.per_host_input_for_training:
       num_partitions = max(config.tpu_config.num_shards // 8, 1)
     else:
@@ -720,7 +797,7 @@ class Problem(object):
       return standardize_shapes(example, batch_size=batch_size)
 
     # Read and preprocess
-    data_dir = data_dir or hparams.data_dir
+    data_dir = data_dir or (hasattr(hparams, "data_dir") and hparams.data_dir)
 
     dataset_kwargs = dataset_kwargs or {}
     dataset_kwargs.update({
@@ -746,7 +823,7 @@ class Problem(object):
       dataset = skip_random_fraction(dataset, data_files[0])
 
     dataset = dataset.map(
-        data_reader.cast_int64_to_int32, num_parallel_calls=num_threads)
+        data_reader.cast_ints_to_int32, num_parallel_calls=num_threads)
 
     if self.batch_size_means_tokens:
       batch_size_means_tokens = True
@@ -755,9 +832,7 @@ class Problem(object):
         batch_size_means_tokens = False
       else:
         tf.logging.warning(
-            "Shapes are not fully defined. Assuming batch_size means tokens. "
-            "Override batch_size_means_tokens() "
-            "in your problem subclass if this is undesired behavior.")
+            "Shapes are not fully defined. Assuming batch_size means tokens.")
         batch_size_means_tokens = True
 
     # Batching
@@ -767,10 +842,9 @@ class Problem(object):
         # on TPU, we use params["batch_size"], which specifies the number of
         # examples across all datashards
         batch_size = params["batch_size"]
-        dataset = dataset.apply(
-            tf.contrib.data.batch_and_drop_remainder(batch_size))
+        dataset = dataset.batch(batch_size, drop_remainder=True)
       else:
-        num_shards = (config and config.data_parallelism.n) or 1
+        num_shards = config.data_parallelism.n if config else 1
         batch_size = hparams.batch_size * num_shards
         dataset = dataset.batch(batch_size)
     else:
@@ -787,9 +861,10 @@ class Problem(object):
       else:
         # On GPU, bucket by length
         dataset = dataset.filter(gpu_valid_size)
+        shard_multiplier = config.data_parallelism.n if config else 1
         batching_scheme = data_reader.hparams_to_batching_scheme(
             hparams,
-            shard_multiplier=(config and config.data_parallelism.n) or 1,
+            shard_multiplier=shard_multiplier,
             length_multiplier=self.get_hparams().batch_size_multiplier)
         if hparams.use_fixed_batch_size:
           # Here  batch_size really means examples per datashard.
@@ -800,35 +875,43 @@ class Problem(object):
             batching_scheme["batch_sizes"])
 
         if not is_training:
-
-          def _pad_batch(features):
-            if not config or config.data_parallelism.n <= 1:
-              return features
+          batch_multiple = shard_multiplier
+          if hparams.use_fixed_batch_size:
+            # Make sure the last batch has the same fixed size as the rest.
+            batch_multiple *= hparams.batch_size
+          if batch_multiple > 1:
             tf.logging.warn(
                 "Padding the batch to ensure that remainder eval batches have "
                 "a batch size divisible by the number of data shards. This may "
                 "lead to incorrect metrics for non-zero-padded features, e.g. "
                 "images. Use a single datashard (i.e. 1 GPU) in that case.")
-            return pad_batch(features, config.data_parallelism.n)
-
-          dataset = dataset.map(_pad_batch, num_parallel_calls=num_threads)
+            dataset = dataset.map(
+                functools.partial(pad_batch, batch_multiple=batch_multiple),
+                num_parallel_calls=num_threads)
 
     dataset = dataset.map(define_shapes, num_parallel_calls=num_threads)
+
+    def prepare_for_output(example):
+      if not config or not config.use_tpu:
+        _summarize_features(example,
+                            (config and config.data_parallelism.n) or 1)
+      if mode == tf.estimator.ModeKeys.PREDICT:
+        example["infer_targets"] = example.pop("targets")
+        return example
+      else:
+        return example, example["targets"]
+
+    dataset = dataset.map(prepare_for_output, num_parallel_calls=num_threads)
     dataset = dataset.prefetch(2)
-    features = dataset.make_one_shot_iterator().get_next()
-    if not config or not config.use_tpu:
-      _summarize_features(features, (config and config.data_parallelism.n) or 1)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
-      features["infer_targets"] = features["targets"]
-      features["targets"] = None
       # This is because of a bug in the Estimator that short-circuits prediction
       # if it doesn't see a QueueRunner. DummyQueueRunner implements the
       # minimal expected interface but does nothing.
       tf.add_to_collection(tf.GraphKeys.QUEUE_RUNNERS,
                            data_reader.DummyQueueRunner())
 
-    return features, features["targets"]
+    return dataset
 
   def serving_input_fn(self, hparams):
     """Input fn for serving export, starting from serialized example."""
@@ -838,8 +921,11 @@ class Problem(object):
     dataset = tf.data.Dataset.from_tensor_slices(serialized_example)
     dataset = dataset.map(self.decode_example)
     dataset = dataset.map(lambda ex: self.preprocess_example(ex, mode, hparams))
-    dataset = dataset.map(data_reader.cast_int64_to_int32)
-    dataset = dataset.padded_batch(1000, dataset.output_shapes)
+    dataset = dataset.map(self.maybe_reverse_and_copy)
+    dataset = dataset.map(data_reader.cast_ints_to_int32)
+    dataset = dataset.padded_batch(
+        tf.shape(serialized_example, out_type=tf.int64)[0],
+        dataset.output_shapes)
     dataset = dataset.map(standardize_shapes)
     features = tf.contrib.data.get_single_element(dataset)
 
@@ -878,6 +964,7 @@ class Problem(object):
 
 
 class FeatureInfo(object):
+  """Encapsulates information about a feature."""
 
   def __init__(self,
                encoder=None,
@@ -1042,7 +1129,6 @@ def problem_hparams_to_features(problem_hparams):
     input_space_id = problem_hparams.input_space_id
     target_space_id = problem_hparams.target_space_id
   return {
-      "problem_choice": 0,
       "input_space_id": input_space_id,
       "target_space_id": target_space_id,
   }
@@ -1054,3 +1140,4 @@ def skip_random_fraction(dataset, data_file):
   # replicas reading the same data in lock-step.
   num_skip = random.randint(0, _file_num_records_cached(data_file))
   return dataset.skip(num_skip)
+

@@ -12,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Tests for common attention."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
 import numpy as np
 from tensor2tensor.layers import common_attention
 from tensor2tensor.layers import common_layers
@@ -403,7 +399,7 @@ class CommonAttentionTest(tf.test.TestCase):
     self.assertEqual(res.shape, (5, 7, 12, 32))
 
   def testBiasBatchCoordinates(self):
-    """Testing the batch cooridnates mask."""
+    """Testing the batch coordinates mask."""
     q = tf.constant([0, 0, 1, 1, 1, 1, 2, 2, 2], dtype=tf.int32)
     q = tf.expand_dims(q, axis=-1)
 

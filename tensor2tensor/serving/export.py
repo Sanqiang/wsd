@@ -12,16 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Export a trained model for serving."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import os
-
-# Dependency imports
-
 from tensor2tensor.bin import t2t_trainer
 from tensor2tensor.utils import decoding
 from tensor2tensor.utils import trainer_lib
@@ -45,7 +41,7 @@ def create_hparams():
       FLAGS.hparams_set,
       FLAGS.hparams,
       data_dir=os.path.expanduser(FLAGS.data_dir),
-      problem_name=FLAGS.problems)
+      problem_name=FLAGS.problem)
 
 
 def main(_):
@@ -61,7 +57,7 @@ def main(_):
 
   estimator = create_estimator(run_config, hparams)
 
-  problem = hparams.problem_instances[0]
+  problem = hparams.problem
   strategy = trainer_lib.create_export_strategy(problem, hparams)
 
   export_dir = os.path.join(ckpt_dir, "export", strategy.name)

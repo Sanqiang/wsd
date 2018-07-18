@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Produces the training and dev data for --problem into --data_dir.
 
 Produces sharded and shuffled TFRecord files of tensorflow.Example protocol
@@ -34,12 +33,10 @@ import os
 import random
 import tempfile
 
-# Dependency imports
-
 import numpy as np
 
+from tensor2tensor import problems as problems_lib  # pylint: disable=unused-import
 from tensor2tensor.data_generators import algorithmic_math
-from tensor2tensor.data_generators import all_problems  # pylint: disable=unused-import
 from tensor2tensor.data_generators import audio
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import snli
@@ -48,6 +45,7 @@ from tensor2tensor.utils import registry
 from tensor2tensor.utils import usr_dir
 
 import tensorflow as tf
+
 
 flags = tf.flags
 FLAGS = flags.FLAGS
@@ -70,7 +68,7 @@ flags.DEFINE_integer("task_id", -1, "For distributed data generation.")
 flags.DEFINE_integer("task_id_start", -1, "For distributed data generation.")
 flags.DEFINE_integer("task_id_end", -1, "For distributed data generation.")
 flags.DEFINE_integer(
-    "num_concurrent_processes", 10,
+    "num_concurrent_processes", None,
     "Applies only to problems for which multiprocess_generate=True.")
 flags.DEFINE_string("t2t_usr_dir", "",
                     "Path to a Python module that will be imported. The "
@@ -131,7 +129,6 @@ def set_random_seed():
 
 
 def main(_):
-  tf.logging.set_verbosity(tf.logging.INFO)
   usr_dir.import_usr_dir(FLAGS.t2t_usr_dir)
 
   # Calculate the list of problems to generate.
@@ -152,7 +149,7 @@ def main(_):
     problems = [p for p in problems if "timit" not in p]
   # Remove parsing if paths are not given.
   if not FLAGS.parsing_path:
-    problems = [p for p in problems if "parsing" not in p]
+    problems = [p for p in problems if "parsing_english_ptb" not in p]
 
   if not problems:
     problems_str = "\n  * ".join(
@@ -210,6 +207,7 @@ def generate_data_in_process(arg):
 
 
 def generate_data_for_registered_problem(problem_name):
+  """Generate data for a registered problem."""
   tf.logging.info("Generating data for %s.", problem_name)
   if FLAGS.num_shards:
     raise ValueError("--num_shards should not be set for registered Problem.")
@@ -234,4 +232,5 @@ def generate_data_for_registered_problem(problem_name):
     problem.generate_data(data_dir, tmp_dir, task_id)
 
 if __name__ == "__main__":
+  tf.logging.set_verbosity(tf.logging.INFO)
   tf.app.run()

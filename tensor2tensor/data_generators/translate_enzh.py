@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Data generators for translation data-sets."""
 
 from __future__ import absolute_import
@@ -20,9 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_encoder
@@ -172,7 +168,7 @@ class TranslateEnzhWmt32k(translate.TranslateProblem):
 
   CWMT:
     - http://nlp.nju.edu.cn/cwmt-wmt/
-    - Website contrains instructions for FTP server access.
+    - Website contains instructions for FTP server access.
     - You'll need to download CASIA, CASICT, DATUM2015, DATUM2017,
         NEU datasets
 

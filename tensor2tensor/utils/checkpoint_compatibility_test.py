@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Test for checkpoint compatibility."""
 # The checkpoint in test_data/transformer_test_ckpt is generated with the OSS
 # release.
@@ -30,9 +29,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
-# Dependency imports
-
 import numpy as np
 
 from tensor2tensor import models  # pylint: disable=unused-import

@@ -12,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Data generators for translation data-sets."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_encoder
 from tensor2tensor.data_generators import text_problems
@@ -88,6 +84,7 @@ class TranslateEncsWmt32k(translate.TranslateProblem):
       ])
       datasets = datasets[1:]
     vocab_datasets += [[item[0], [item[1][0], item[1][1]]] for item in datasets]
+    return vocab_datasets
 
 
 @registry.register_problem

@@ -2,127 +2,16 @@ import tensorflow as tf
 from tensor2tensor.models import transformer
 from util import constant
 from tensor2tensor.layers import common_attention, common_layers
+import tensorflow_hub as hub
 
 
-class Graph:
+class BaseGraph:
     def __init__(self, is_train, model_config, data):
         self.is_train = is_train
         self.model_config = model_config
         self.data = data
         self.hparams = transformer.transformer_base()
         self.setup_hparams()
-
-    def create_model_multigpu(self):
-        # with tf.device('/cpu:0'):
-            losses = []
-            grads = []
-            optim = self.get_optim()
-            self.objs = []
-
-            with tf.device('/cpu:0'):
-                self.global_step = tf.train.get_or_create_global_step()
-                self.embs = tf.get_variable(
-                    'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-
-            with tf.variable_scope(tf.get_variable_scope()):
-                for gpu_id in range(self.model_config.num_gpus):
-                    with tf.device('/device:GPU:%d' % gpu_id):
-                        with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
-                            loss, obj = self.create_model()
-                            grad = optim.compute_gradients(loss)
-                            tf.get_variable_scope().reuse_variables()
-                            losses.append(loss)
-                            grads.append(grad)
-                            self.objs.append(obj)
-
-            with tf.variable_scope('optimization'):
-                self.loss = tf.divide(tf.add_n(losses), self.model_config.num_gpus)
-                self.perplexity = tf.exp(tf.reduce_mean(self.loss))
-
-                if self.is_train:
-                    avg_grad = self.average_gradients(grads)
-                    grads = [g for (g, v) in avg_grad]
-                    clipped_grads, _ = tf.clip_by_global_norm(grads, 4.0)
-                    self.train_op = optim.apply_gradients(zip(clipped_grads, tf.trainable_variables()),
-                                                          global_step=self.global_step)
-                    self.increment_global_step = tf.assign_add(self.global_step,
-                                                               self.model_config.batch_size * self.model_config.num_gpus)
-
-                self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
-
-    def create_model(self):
-        with tf.variable_scope('variables'):
-            contexts = []
-            for _ in range(self.model_config.max_context_len):
-                contexts.append(
-                    tf.zeros(self.model_config.batch_size, tf.int32, name='context_input'))
-
-            sense_inps, abbr_sinps, abbr_einps = [], [], []
-            for _ in range(self.model_config.max_abbrs):
-                sense_inps.append(tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input'))
-                abbr_sinps.append(tf.zeros([self.model_config.batch_size], tf.int32, name='sense__sinput'))
-                abbr_einps.append(tf.zeros([self.model_config.batch_size], tf.int32, name='sense_einput'))
-
-            num_abbr = tf.zeros([self.model_config.batch_size], tf.float32, name='num_abbr')
-
-        with tf.variable_scope('model'):
-            contexts_emb = tf.stack(self.embedding_fn(contexts, self.embs), axis=1)
-            contexts_emb_bias = common_attention.attention_bias_ignore_padding(
-                tf.to_float(tf.equal(tf.stack(contexts, axis=1),
-                                     self.data.voc.encode(constant.PAD))))
-            contexts_emb = tf.nn.dropout(contexts_emb,
-                                                 1.0 - self.hparams.layer_prepostprocess_dropout)
-            encoder_outputs = transformer.transformer_encoder(
-                contexts_emb, contexts_emb_bias, self.hparams)
-
-            if self.model_config.aggregate_mode == 'selfattn':
-                selfattn_w = tf.get_variable(
-                    'selfattn_w', [1, self.model_config.dimension, 1], tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-                selfattn_b = tf.get_variable(
-                    'selfattn_b', [1, 1, 1], tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-                weight = tf.nn.tanh(tf.nn.conv1d(encoder_outputs, selfattn_w, 1, 'SAME') + selfattn_b)
-                encoder_outputs *= weight
-                aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
-            else:
-                aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
-
-        with tf.variable_scope('pred'):
-            proj_w = tf.get_variable('proj_w', [self.model_config.dimension, self.data.sen_cnt], tf.float32,
-                                initializer=tf.contrib.layers.xavier_initializer())
-            proj_b = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
-                                     initializer=tf.contrib.layers.xavier_initializer())
-
-            losses = []
-            preds = []
-            for abbr_id in range(self.model_config.max_abbrs):
-                abbr_sinp = abbr_sinps[abbr_id]
-                abbr_einp = abbr_einps[abbr_id]
-                sense_inp = sense_inps[abbr_id]
-
-                mask = tf.to_float(tf.sequence_mask(abbr_einp, self.data.sen_cnt)) - tf.to_float(tf.sequence_mask(abbr_sinp, self.data.sen_cnt))
-                logits = tf.matmul(aggregate_state, proj_w) + proj_b
-                logits *= mask
-
-                loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
-                loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
-                loss *= loss_mask
-
-                losses.append(loss)
-                preds.append(tf.nn.top_k(logits, k=5, sorted=True)[1])
-
-        preds = tf.stack(preds, axis=1)
-        obj = {
-            'contexts': contexts,
-            'sense_inp': sense_inps,
-            'abbr_sinp': abbr_sinps,
-            'abbr_einp': abbr_einps,
-            'num_abbr': num_abbr,
-            'preds': preds,
-        }
-        return tf.add_n(losses)/num_abbr, obj
 
     def get_optim(self):
         learning_rate = tf.constant(self.model_config.learning_rate)
@@ -187,7 +76,6 @@ class Graph:
         self.hparams.num_heads = self.model_config.num_heads
         self.hparams.num_hidden_layers = self.model_config.num_hidden_layers
         self.hparams.num_encoder_layers = self.model_config.num_encoder_layers
-        self.hparams.num_decoder_layers = self.model_config.num_decoder_layers
         self.hparams.pos = self.model_config.hparams_pos
         self.hparams.hidden_size = self.model_config.dimension
         self.hparams.layer_prepostprocess_dropout = self.model_config.layer_prepostprocess_dropout
@@ -200,3 +88,161 @@ class Graph:
             self.hparams.attention_dropout = 0.0
             self.hparams.dropout = 0.0
             self.hparams.relu_dropout = 0.0
+
+    def get_aggregate_state(self, encoder_outputs):
+        if 'selfattn' in self.model_config.aggregate_mode:
+            selfattn_w = tf.get_variable(
+                'selfattn_w', [1, self.model_config.dimension, 1], tf.float32,
+                initializer=tf.contrib.layers.xavier_initializer())
+            selfattn_b = tf.get_variable(
+                'selfattn_b', [1, 1, 1], tf.float32,
+                initializer=tf.contrib.layers.xavier_initializer())
+            weight = tf.nn.tanh(tf.nn.conv1d(encoder_outputs, selfattn_w, 1, 'SAME') + selfattn_b)
+            encoder_outputs *= weight
+            aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
+        else:
+            aggregate_state = tf.reduce_mean(encoder_outputs, axis=1)
+        return aggregate_state
+
+
+class ContextEncoder(BaseGraph):
+    def __init__(self, is_train, model_config, data, embs):
+        BaseGraph.__init__(self, is_train, model_config, data)
+        # self.hparams_subword = transformer.transformer_base_subword()
+        # self.hparams_subword.num_heads = self.model_config.num_heads
+        # self.hparams_subword.num_hidden_layers = 3
+        # self.hparams_subword.num_encoder_layers = 3
+        # self.hparams_subword.hidden_size = self.model_config.dimension
+        self.embs = embs
+
+    def embed_context(self, contexts, abbr_inp_emb):
+        with tf.variable_scope('context_embed'):
+            contexts_emb = self.embedding_fn(contexts, self.embs)
+            return contexts_emb
+
+    def context_encoder(self, contexts_emb, contexts, abbr_inp_emb):
+        contexts_bias = common_attention.attention_bias_ignore_padding(
+            tf.to_float(tf.equal(tf.stack(contexts, axis=1),
+                                 self.data.voc.encode(constant.PAD))))
+        contexts_emb = tf.nn.dropout(contexts_emb,
+                                     1.0 - self.hparams.layer_prepostprocess_dropout)
+        encoder_ouput = transformer.transformer_encoder_abbr(
+            contexts_emb, contexts_bias, abbr_inp_emb,
+            tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams)
+
+        return encoder_ouput
+
+
+class Graph(BaseGraph):
+    def __init__(self, is_train, model_config, data):
+        BaseGraph.__init__(self, is_train, model_config, data)
+
+    def create_model_multigpu(self):
+        with tf.device('/cpu:0'):
+            losses = []
+            grads = []
+            optim = self.get_optim()
+            self.objs = []
+
+            with tf.device('/cpu:0'):
+                self.global_step = tf.train.get_or_create_global_step()
+                self.embs = tf.get_variable(
+                    'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
+                    initializer=tf.contrib.layers.xavier_initializer())
+
+            self.embed_hub_module = None
+            if self.model_config.hub_module_embedding:
+                self.embed_hub_module = hub.Module(
+                    'https://tfhub.dev/google/universal-sentence-encoder-large/3', name='embed_hub')
+
+            with tf.variable_scope(tf.get_variable_scope()):
+                for gpu_id in range(self.model_config.num_gpus):
+                    with tf.device('/device:GPU:%d' % gpu_id):
+                        with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
+                            loss, obj = self.create_model()
+                            print('Built Model for GPU%s' % gpu_id)
+                            grad = optim.compute_gradients(loss)
+                            print('Built Grads for GPU%s' % gpu_id)
+                            tf.get_variable_scope().reuse_variables()
+                            losses.append(loss)
+                            grads.append(grad)
+                            self.objs.append(obj)
+
+            with tf.variable_scope('optimization'):
+                self.loss = tf.divide(tf.add_n(losses), self.model_config.num_gpus)
+                self.perplexity = tf.exp(tf.reduce_mean(self.loss))
+
+                if self.is_train:
+                    avg_grad = self.average_gradients(grads)
+                    grads = [g for (g, v) in avg_grad]
+                    clipped_grads, _ = tf.clip_by_global_norm(grads, 4.0)
+                    self.train_op = optim.apply_gradients(zip(clipped_grads, tf.trainable_variables()),
+                                                          global_step=self.global_step)
+                    self.increment_global_step = tf.assign_add(self.global_step,
+                                                               self.model_config.batch_size * self.model_config.num_gpus)
+
+                self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
+
+    def create_model(self):
+        with tf.variable_scope('variables'):
+            contexts = []
+            for _ in range(self.model_config.max_context_len):
+                contexts.append(
+                    tf.zeros(self.model_config.batch_size, tf.int32, name='context_input'))
+
+            abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
+            sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
+            abbr_sinp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense__sinput')
+            abbr_einp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense_einput')
+
+            text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
+
+        with tf.variable_scope('model'):
+            context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
+
+        with tf.variable_scope('pred'):
+            project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
+            proj_w = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
+                                initializer=tf.contrib.layers.xavier_initializer())
+            proj_b = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
+                                     initializer=tf.contrib.layers.xavier_initializer())
+
+            abbr_inp_emb = self.embedding_fn(abbr_inp, self.embs)
+            abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
+            contexts_emb = tf.stack(context_encoder.embed_context(contexts, abbr_inp_emb), axis=1)
+
+            encoder_outputs = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
+            # encoder_outputs = transformer.transformer_encoder_addabbr(
+            #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
+            aggregate_state = self.get_aggregate_state(encoder_outputs)
+            if self.model_config.hub_module_embedding:
+                embed_hub_state = self.embed_hub_module(text_input)
+                aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
+
+            # Instead mask logit, mask proj_w and proj_b for efficiency
+            mask = tf.to_float(tf.sequence_mask(abbr_einp, self.data.sen_cnt)) - tf.to_float(tf.sequence_mask(abbr_sinp, self.data.sen_cnt))
+            proj_w_stack = tf.stack([proj_w for _ in range(self.model_config.batch_size)], axis=0)
+            masked_proj_w = proj_w_stack * tf.expand_dims(mask, 1)
+            proj_b_stack = tf.stack([proj_b for _ in range(self.model_config.batch_size)], axis=0)
+            masked_proj_b = proj_b_stack * mask
+            logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), masked_proj_w), axis=1) + masked_proj_b
+            # logits = tf.matmul(aggregate_state, proj_w) + proj_b
+            # logits *= mask
+
+            loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
+            loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
+            loss *= loss_mask
+
+            pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
+            tf.get_variable_scope().reuse_variables()
+
+        obj = {
+            'contexts': contexts,
+            'text_input': text_input,
+            'abbr_inp': abbr_inp,
+            'sense_inp': sense_inp,
+            'abbr_sinp': abbr_sinp,
+            'abbr_einp': abbr_einp,
+            'pred': pred,
+        }
+        return loss, obj

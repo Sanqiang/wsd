@@ -12,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Tests for TransformerRevnet."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
 import numpy as np
 
 from tensor2tensor.data_generators import problem_hparams
@@ -47,7 +43,7 @@ class TransformerRevnetTest(tf.test.TestCase):
     vocab_size = 9
     hparams = transformer_revnet_test()
     p_hparams = problem_hparams.test_problem_hparams(vocab_size, vocab_size)
-    hparams.problems = [p_hparams]
+    hparams.problem_hparams = p_hparams
     inputs = -1 + np.random.random_integers(
         vocab_size, size=(batch_size, input_length, 1, 1))
     targets = -1 + np.random.random_integers(

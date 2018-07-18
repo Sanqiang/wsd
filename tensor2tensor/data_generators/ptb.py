@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Data generators for PTB data-sets."""
 
 from __future__ import absolute_import
@@ -23,9 +22,6 @@ import collections
 import os
 import sys
 import tarfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_encoder
@@ -58,7 +54,7 @@ def _build_vocab(filename, vocab_path, vocab_size):
   Args:
     filename: file to read list of words from.
     vocab_path: path where to save the vocabulary.
-    vocab_size: size of the vocablulary to generate.
+    vocab_size: size of the vocabulary to generate.
   """
   data = _read_words(filename)
   counter = collections.Counter(data)

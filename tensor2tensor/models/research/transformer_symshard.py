@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Test of the SymShard programming model.
 
 Symmetric model parallellism.
@@ -43,10 +42,7 @@ TODO(noam): Make sure no one is using super_lm, then delete it.
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
-from six.moves import xrange  # pylint: disable=redefined-builtin
+from six.moves import range  # pylint: disable=redefined-builtin
 
 from tensor2tensor.layers import common_attention
 from tensor2tensor.layers import common_hparams
@@ -69,7 +65,7 @@ class TransformerSymshard(t2t_model.T2TModel):
     assert hparams.num_model_shards % len(ps_devices) == 0
     shards_per_device = hparams.num_model_shards // len(ps_devices)
     model_devices = [ps_devices[i // shards_per_device]
-                     for i in xrange(hparams.num_model_shards)]
+                     for i in range(hparams.num_model_shards)]
     print("model_devices = %s" % model_devices)
     mp = expert_utils.Parallelism(model_devices, reuse=False)
     targets_vocab_size = self._problem_hparams.vocabulary["targets"].vocab_size
@@ -208,10 +204,10 @@ class TransformerSymshard(t2t_model.T2TModel):
     else:
       logits = mp(
           tf.tensordot, decoder_output, output_var, [[[2], [1]]] * mp.n)
-      logits = common_layers.all_reduce_ring(logits, mp)
+      logits = expert_utils.all_reduce_ring(logits, mp)
       # On each device, we compute the loss for a part of the batch.
       # This is faster than computing the whole loss on one shard.
-      mp, logits = common_layers.reduce_by_device(mp, logits, lambda l: l[0])
+      mp, logits = expert_utils.reduce_by_device(mp, logits, lambda l: l[0])
       def _loss_for_shard(logits, targets, shard):
         logits = common_layers.approximate_split(logits, mp.n, 0)[shard]
         targets = common_layers.approximate_split(targets, mp.n, 0)[shard]
@@ -283,7 +279,7 @@ def _layer_stack(mp,
             return tuple(tf.split(
                 t, [mix_size, hparams.hidden_size - mix_size], 2))
           to_mix, to_keep = mp(_split, x)
-          mixed = common_layers.all_reduce_ring(to_mix, mp)
+          mixed = expert_utils.all_reduce_ring(to_mix, mp)
           mixed = mp(tf.multiply, mixed, mp.n ** -0.5)
           x = mp(lambda a, b: tf.concat([a, b], 2), mixed, to_keep)
       elif layer_type == "att":

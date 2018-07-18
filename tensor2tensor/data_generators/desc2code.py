@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Data generators for the Description2Code OpenAI data-set."""
 
 from __future__ import absolute_import
@@ -24,9 +23,6 @@ import os
 import random
 import re
 import zipfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_encoder
@@ -140,8 +136,8 @@ class Desc2CodeProblem(text_problems.Text2TextProblem):
     samples = list(generator_samples(tmp_dir, self.pb_constants))
 
     # Split between train and dev
-    # Suffle to get problems from diverse sources (CodeChef and CodeForces) and
-    # dificulties in each set.
+    # Shuffle to get problems from diverse sources (CodeChef and CodeForces) and
+    # difficulties in each set.
     # Need to sort the samples first before shuffling (as walk() isn't
     # deterministic)
     samples.sort(key=lambda x: x.desc_file)  # in-place
@@ -160,6 +156,7 @@ class Desc2CodeProblem(text_problems.Text2TextProblem):
     ))
 
     def generator_samples_content(get_source, get_target):
+      """Generate samples."""
       source, target = None, None
       # Iterate over the coding samples
       for sample in samples:
@@ -183,8 +180,11 @@ class Desc2CodeProblem(text_problems.Text2TextProblem):
 
     # Generate vocab for both source and target
 
-    source_vocab = generator_utils.get_or_generate_vocab(
-        data_dir, tmp_dir, self.vocab_input_filename, self.input_vocab_size)
+    # TODO(lukaszkaiser): Fix vocab generation call. No sources given.
+    assert not self.vocab_input_filename
+    source_vocab = None
+    # source_vocab = generator_utils.get_or_generate_vocab(
+    #     data_dir, tmp_dir, self.vocab_input_filename, self.input_vocab_size)
 
     target_vocab = generator_utils.get_or_generate_vocab_inner(
         data_dir=data_dir,
@@ -289,7 +289,7 @@ def generator_samples(tmp_dir, pb_cst):
     for f in tf.gfile.Glob(code_pattern):
       with tf.gfile.GFile(f, mode="r") as target_file:
         # Hack to filter C++/Java files. In theory some python comments could
-        # make the file be concidered as C++ but in practice the chance of
+        # make the file be considered as C++ but in practice the chance of
         # getting a false negative is low.
         content = target_file.read()
         if not any(p in content for p in pb_cst.filter_patterns):

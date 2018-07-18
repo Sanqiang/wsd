@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Train and evaluate."""
 from __future__ import absolute_import
 from __future__ import division
@@ -21,11 +20,9 @@ from __future__ import print_function
 import contextlib
 import os
 import sys
-
-# Dependency imports
-
 from tensor2tensor import models  # pylint: disable=unused-import
 from tensor2tensor import problems as problems_lib  # pylint: disable=unused-import
+from tensor2tensor.data_generators import problem  # pylint: disable=unused-import
 from tensor2tensor.utils import cloud_mlengine
 from tensor2tensor.utils import cloud_tpu
 from tensor2tensor.utils import decoding
@@ -46,7 +43,7 @@ flags.DEFINE_string("t2t_usr_dir", None,
                     "The imported files should contain registrations, "
                     "e.g. @registry.register_model calls, that will then be "
                     "available to the t2t-trainer.")
-flags.DEFINE_integer("random_seed", 1234, "Random seed.")
+flags.DEFINE_integer("random_seed", None, "Random seed.")
 flags.DEFINE_integer("tpu_num_shards", 8, "Number of tpu shards.")
 flags.DEFINE_integer("iterations_per_loop", 100,
                      "Number of iterations in a TPU training loop.")
@@ -57,6 +54,12 @@ flags.DEFINE_bool("generate_data", False, "Generate data before training?")
 flags.DEFINE_string("tmp_dir", "/tmp/t2t_datagen",
                     "Temporary storage directory, used if --generate_data.")
 flags.DEFINE_bool("profile", False, "Profile performance?")
+flags.DEFINE_integer("inter_op_parallelism_threads", 0,
+                     "Number of inter_op_parallelism_threads to use for CPU. "
+                     "See TensorFlow config.proto for details.")
+flags.DEFINE_integer("intra_op_parallelism_threads", 0,
+                     "Number of intra_op_parallelism_threads to use for CPU. "
+                     "See TensorFlow config.proto for details.")
 
 # To maintain compatibility with some internal libs, we guard against these flag
 # definitions possibly erroring. Apologies for the ugliness.
@@ -81,6 +84,8 @@ flags.DEFINE_string("cloud_tpu_name", "%s-tpu" % os.getenv("USER"),
                     "Name of Cloud TPU instance to use or create.")
 flags.DEFINE_bool("cloud_delete_on_done", False,
                   "Whether to delete the VM and TPU instance when done.")
+flags.DEFINE_bool("cloud_skip_confirmation", False,
+                  "Whether to skip launch confirmations.")
 
 # Google Cloud ML Engine
 flags.DEFINE_bool("cloud_mlengine", False,
@@ -109,12 +114,9 @@ flags.DEFINE_integer("autotune_parallel_trials", 1,
 flags.DEFINE_string("job-dir", None,
                     "DO NOT USE. Exists only for Cloud ML Engine to pass in "
                     "during hyperparameter tuning. Overrides --output_dir.")
-
-
-def get_problem_name():
-  problems = FLAGS.problems.split("-")
-  assert len(problems) == 1
-  return problems[0]
+flags.DEFINE_integer("log_step_count_steps", 100,
+                     "Number of local steps after which progress is printed "
+                     "out")
 
 
 def set_hparams_from_args(args):
@@ -152,15 +154,16 @@ def create_hparams():
   return trainer_lib.create_hparams(FLAGS.hparams_set, FLAGS.hparams)
 
 
-def create_experiment_fn():
+def create_experiment_fn(**kwargs):
   return trainer_lib.create_experiment_fn(
       model_name=FLAGS.model,
-      problem_name=get_problem_name(),
+      problem_name=FLAGS.problem,
       data_dir=os.path.expanduser(FLAGS.data_dir),
       train_steps=FLAGS.train_steps,
       eval_steps=FLAGS.eval_steps,
       min_eval_frequency=FLAGS.local_eval_frequency,
       schedule=FLAGS.schedule,
+      eval_throttle_seconds=FLAGS.eval_throttle_seconds,
       export=FLAGS.export_saved_model,
       decode_hparams=decoding.decode_hparams(FLAGS.decode_hparams),
       use_tfdbg=FLAGS.tfdbg,
@@ -170,14 +173,31 @@ def create_experiment_fn():
       eval_early_stopping_metric_delta=FLAGS.eval_early_stopping_metric_delta,
       eval_early_stopping_metric_minimize=FLAGS.
       eval_early_stopping_metric_minimize,
-      use_tpu=FLAGS.use_tpu)
+      use_tpu=FLAGS.use_tpu,
+      **kwargs)
 
 
 def create_run_config(hp):
+  """Create a run config.
+
+  Args:
+    hp: model hyperparameters
+  Returns:
+    a run config
+  """
   save_ckpt_steps = max(FLAGS.iterations_per_loop, FLAGS.local_eval_frequency)
   save_ckpt_secs = FLAGS.save_checkpoints_secs or None
   if save_ckpt_secs:
     save_ckpt_steps = None
+  assert FLAGS.output_dir or FLAGS.checkpoint_path
+  tpu_config_extra_kwargs = {}
+
+  # the various custom getters we have written do not play well together yet.
+  # TODO(noam): ask rsepassi for help here.
+  daisy_chain_variables = (
+      hp.daisy_chain_variables and
+      hp.activation_dtype == "float32" and
+      hp.weight_dtype == "float32")
   return trainer_lib.create_run_config(
       model_dir=os.path.expanduser(FLAGS.output_dir),
       master=FLAGS.master,
@@ -197,7 +217,7 @@ def create_run_config(hp):
       use_tpu=FLAGS.use_tpu,
       schedule=FLAGS.schedule,
       no_data_parallelism=hp.no_data_parallelism,
-      daisy_chain_variables=hp.daisy_chain_variables,
+      daisy_chain_variables=daisy_chain_variables,
       ps_replicas=FLAGS.ps_replicas,
       ps_job=FLAGS.ps_job,
       ps_gpu=FLAGS.ps_gpu,
@@ -205,7 +225,11 @@ def create_run_config(hp):
       worker_id=FLAGS.worker_id,
       worker_job=FLAGS.worker_job,
       random_seed=FLAGS.random_seed,
-      tpu_infeed_sleep_secs=FLAGS.tpu_infeed_sleep_secs)
+      tpu_infeed_sleep_secs=FLAGS.tpu_infeed_sleep_secs,
+      inter_op_parallelism_threads=FLAGS.inter_op_parallelism_threads,
+      log_step_count_steps=FLAGS.log_step_count_steps,
+      intra_op_parallelism_threads=FLAGS.intra_op_parallelism_threads,
+      tpu_config_extra_kwargs=tpu_config_extra_kwargs)
 
 
 def generate_data():
@@ -215,7 +239,7 @@ def generate_data():
   tf.gfile.MakeDirs(data_dir)
   tf.gfile.MakeDirs(tmp_dir)
 
-  problem_name = get_problem_name()
+  problem_name = FLAGS.problem
   tf.logging.info("Generating data for %s" % problem_name)
   registry.problem(problem_name).generate_data(data_dir, tmp_dir)
 
@@ -232,7 +256,7 @@ def profile_context():
     yield
 
 
-def log_registry():
+def maybe_log_registry_and_exit():
   if FLAGS.registry_help:
     tf.logging.info(registry.help_string())
     sys.exit(0)
@@ -274,9 +298,7 @@ def save_metadata(hparams):
   # Save hparams as hparams.json
   hparams_fname = os.path.join(output_dir, "hparams.json")
   with tf.gfile.Open(hparams_fname, "w") as f:
-    # TODO(lukaszkaiser): use the first line once we require TF 1.5+.
-    # f.write(hparams.to_json(indent=0, sort_keys=True))
-    f.write(hparams.to_json())
+    f.write(hparams.to_json(indent=0, sort_keys=True))
 
 
 def execute_schedule(exp):
@@ -305,7 +327,8 @@ def maybe_cloud_tpu():
   with cloud_tpu.cloud_tpu(
       FLAGS.cloud_vm_name,
       FLAGS.cloud_tpu_name,
-      delete_on_done=FLAGS.cloud_delete_on_done) as tpu_master:
+      delete_on_done=FLAGS.cloud_delete_on_done,
+      skip_confirmation=FLAGS.cloud_skip_confirmation) as tpu_master:
     FLAGS.master = tpu_master
     yield
 
@@ -314,10 +337,12 @@ def main(argv):
   tf.logging.set_verbosity(tf.logging.INFO)
   trainer_lib.set_random_seed(FLAGS.random_seed)
   usr_dir.import_usr_dir(FLAGS.t2t_usr_dir)
-  log_registry()
+  maybe_log_registry_and_exit()
+
 
   if FLAGS.cloud_mlengine:
-    return cloud_mlengine.launch()
+    cloud_mlengine.launch()
+    return
 
   if FLAGS.generate_data:
     generate_data()

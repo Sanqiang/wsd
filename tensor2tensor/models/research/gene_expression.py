@@ -12,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Models for gene expression from DNA."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-# Dependency imports
-
-from six.moves import xrange  # pylint: disable=redefined-builtin
+from six.moves import range  # pylint: disable=redefined-builtin
 
 from tensor2tensor.layers import common_hparams
 from tensor2tensor.layers import common_layers
@@ -59,7 +55,7 @@ class GeneExpressionConv(t2t_model.T2TModel):
 
     # Conv layers
     assert hp.num_conv_layers == len(hp.pooling_windows)
-    for i in xrange(hp.num_conv_layers):
+    for i in range(hp.num_conv_layers):
       out = conv_layer(
           out,
           hp.hidden_size,
@@ -71,7 +67,7 @@ class GeneExpressionConv(t2t_model.T2TModel):
           name="conv_%d" % (i + 1))
 
     # Dense dilated conv layers
-    for i in xrange(hp.num_dconv_layers):
+    for i in range(hp.num_dconv_layers):
       dilation_rate = 2**(i + 1)
       dconv_out = conv_layer(
           out,
@@ -100,6 +96,7 @@ def conv_layer(x,
                dropout_rate,
                dilation_rate,
                name="conv"):
+  """Single conv layer with relu, optional pooling, and dropout."""
   with tf.variable_scope(name):
     out = x
     out = common_layers.conv1d_block(

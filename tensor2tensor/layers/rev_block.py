@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Reversible Residual Block.
 
 From
@@ -24,10 +23,7 @@ from __future__ import division
 from __future__ import print_function
 
 import re
-
-# Dependency imports
-
-from six.moves import xrange  # pylint: disable=redefined-builtin
+from six.moves import range  # pylint: disable=redefined-builtin
 
 from tensor2tensor.layers import common_layers
 import tensorflow as tf
@@ -53,10 +49,10 @@ def _rev_layer_forward(xs, f, g, f_side_input, g_side_input,
   x1, x2 = xs
   y1 = x1 + (f(x2, f_side_input) if f_side_input else f(x2))
   y2 = x2 + (g(y1, g_side_input) if g_side_input else g(y1))
+  out = (y1, y2)
   if gate_outputs:
-    return tf.tuple([y1, y2])
-  else:
-    return (y1, y2)
+    out = tf.tuple(out)
+  return out
 
 
 def _rev_layer_backward(ys, grad_ys, f, g, f_vars, f_side_input, g_vars,
@@ -117,7 +113,7 @@ def _rev_block_forward(x1,
                        gate_outputs=False):
   """Forward for a series of reversible layers."""
   out = (x1, x2)
-  for i in xrange(num_layers):
+  for i in range(num_layers):
     out = _rev_layer_forward(
         out, f[i], g[i], f_side_input, g_side_input, gate_outputs=gate_outputs)
 
@@ -216,7 +212,7 @@ class RevBlock(object):
     f.reverse()
     g.reverse()
 
-    for i in xrange(self.num_layers):
+    for i in range(self.num_layers):
       ys, grad_ys, f_ret, g_ret = _rev_layer_backward(
           ys, grad_ys, f[i], g[i], f_vars[i], self.f_side_input, g_vars[i],
           self.g_side_input)
@@ -286,7 +282,7 @@ class RevBlock(object):
     f.reverse()
     g.reverse()
 
-    for i in xrange(self.num_layers):
+    for i in range(self.num_layers):
       gy1 = g[i](y1, self.g_side_input) if self.g_side_input else g[i](y1)
       x2 = y2 - gy1
       fx2 = f[i](x2, self.f_side_input) if self.f_side_input else f[i](x2)

@@ -12,11 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Translate a file with all checkpoints in a given directory.
 
 t2t-decoder will be executed with these parameters:
---problems
+--problem
 --data_dir
 --output_dir with the value of --model_dir
 --decode_from_file with the value of --source
@@ -30,9 +29,6 @@ from __future__ import print_function
 
 import os
 import shutil
-
-# Dependency imports
-
 from tensor2tensor.utils import bleu_hook
 
 import tensorflow as tf
@@ -61,7 +57,7 @@ flags.DEFINE_float("alpha", 0.6, "Beam-search alpha.")
 flags.DEFINE_string("model", "transformer", "see t2t-decoder")
 flags.DEFINE_string("t2t_usr_dir", None, "see t2t-decoder")
 flags.DEFINE_string("data_dir", None, "see t2t-decoder")
-flags.DEFINE_string("problems", None, "see t2t-decoder")
+flags.DEFINE_string("problem", None, "see t2t-decoder")
 flags.DEFINE_string("hparams_set", "transformer_big_single_gpu",
                     "see t2t-decoder")
 
@@ -73,11 +69,11 @@ def main(_):
   translations_dir = os.path.expanduser(FLAGS.translations_dir)
   source = os.path.expanduser(FLAGS.source)
   tf.gfile.MakeDirs(translations_dir)
-  translated_base_file = os.path.join(translations_dir, FLAGS.problems)
+  translated_base_file = os.path.join(translations_dir, FLAGS.problem)
 
   # Copy flags.txt with the original time, so t2t-bleu can report correct
   # relative time.
-  flags_path = os.path.join(translations_dir, FLAGS.problems + "-flags.txt")
+  flags_path = os.path.join(translations_dir, FLAGS.problem + "-flags.txt")
   if not os.path.exists(flags_path):
     shutil.copy2(os.path.join(model_dir, "flags.txt"), flags_path)
 
@@ -93,11 +89,11 @@ def main(_):
       tf.logging.info("Translating " + out_file)
       params = (
           "--t2t_usr_dir={FLAGS.t2t_usr_dir} --output_dir={model_dir} "
-          "--data_dir={FLAGS.data_dir} --problems={FLAGS.problems} "
+          "--data_dir={FLAGS.data_dir} --problem={FLAGS.problem} "
           "--decode_hparams=beam_size={FLAGS.beam_size},alpha={FLAGS.alpha} "
           "--model={FLAGS.model} --hparams_set={FLAGS.hparams_set} "
           "--checkpoint_path={model.filename} --decode_from_file={source} "
-          "--decode_to_file={out_file}"
+          "--decode_to_file={out_file} --keep_timestamp"
       ).format(**locals_and_flags)
       command = FLAGS.decoder_command.format(**locals())
       tf.logging.info("Running:\n" + command)

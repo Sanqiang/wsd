@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Self-attention based language model.
 
 Like transformer.py, but no encoder
@@ -26,10 +25,7 @@ from __future__ import division
 from __future__ import print_function
 
 import functools
-
-# Dependency imports
-
-from six.moves import xrange  # pylint: disable=redefined-builtin
+from six.moves import range  # pylint: disable=redefined-builtin
 
 from tensor2tensor.layers import common_attention
 from tensor2tensor.layers import common_hparams
@@ -163,7 +159,7 @@ class AttentionLmMoe(t2t_model.T2TModel):
     def print_shape(x, suffix, debug=False):
       # To help debugging, print the input/output shapes at inference and eval
       # Inference for long sequences can take a long time, so that's help to
-      # see the progession of the generation
+      # see the progression of the generation
       if not debug and hparams.mode == ModeKeys.TRAIN:
         return x
       return tf.Print(x, [tf.shape(x)], "shape_x_{}".format(suffix))
@@ -182,7 +178,7 @@ class AttentionLmMoe(t2t_model.T2TModel):
 
     num_hidden_layers = (
         len(hparams.attention_layers) or hparams.num_hidden_layers)
-    for layer in xrange(num_hidden_layers):
+    for layer in range(num_hidden_layers):
       with tf.variable_scope("layer_%d" % layer):
 
         # Use the layer type defined in attention_layers
@@ -368,7 +364,7 @@ def attention_lm_moe_prepare_decoder(targets, hparams):
   Returns:
     decoder_input: a Tensor, bottom of decoder stack
     decoder_self_attention_bias: a Tensor, containing large negative values
-    to implement masked attention and possibly baises for diagonal alignments
+    to implement masked attention and possibly biases for diagonal alignments
     pad_remover (expert_utils.PadRemover): an util object to remove padding
   """
   targets_pad_mask = common_attention.embedding_to_padding(targets)
@@ -454,7 +450,7 @@ def restore_pad(x, ref_x, pad_remover, mode):
   x = tf.squeeze(x, axis=0)
   if mode != ModeKeys.PREDICT:
     x = pad_remover.restore(x)
-  x = expert_utils.reshape_like(x, ref_x)
+  x = common_layers.reshape_like(x, ref_x)
   return x
 
 

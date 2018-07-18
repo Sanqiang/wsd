@@ -12,18 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Librispeech dataset."""
 
 import os
 import tarfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
+from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import speech_recognition
 from tensor2tensor.utils import registry
 
+import tensorflow as tf
 
 _LIBRISPEECH_TRAIN_DATASETS = [
     [
@@ -118,6 +116,7 @@ class Librispeech(speech_recognition.SpeechRecognitionProblem):
 
   def generator(self, data_dir, tmp_dir, datasets,
                 eos_list=None, start_from=0, how_many=0):
+    del eos_list
     i = 0
     for url, subdir in datasets:
       filename = os.path.basename(url)
@@ -184,16 +183,47 @@ class LibrispeechTrainFullTestClean(Librispeech):
   """Problem to train on full 960h, but evaluate on clean data only."""
 
   def training_filepaths(self, data_dir, num_shards, shuffled):
-    return Librispeech.training_filepaths(data_dir, num_shards, shuffled)
+    return Librispeech.training_filepaths(self, data_dir, num_shards, shuffled)
 
   def dev_filepaths(self, data_dir, num_shards, shuffled):
-    return LibrispeechClean.dev_filepaths(data_dir, num_shards, shuffled)
+    return LibrispeechClean.dev_filepaths(self, data_dir, num_shards, shuffled)
 
   def test_filepaths(self, data_dir, num_shards, shuffled):
-    return LibrispeechClean.test_filepaths(data_dir, num_shards, shuffled)
+    return LibrispeechClean.test_filepaths(self, data_dir, num_shards, shuffled)
 
   def generate_data(self, data_dir, tmp_dir, task_id=-1):
     raise Exception("Generate librispeech and librispeech_clean data.")
+
+  def filepattern(self, data_dir, mode, shard=None):
+    """Get filepattern for data files for mode.
+
+    Matches mode to a suffix.
+    * DatasetSplit.TRAIN: train
+    * DatasetSplit.EVAL: dev
+    * DatasetSplit.TEST: test
+    * tf.estimator.ModeKeys.PREDICT: dev
+
+    Args:
+      data_dir: str, data directory.
+      mode: DatasetSplit
+      shard: int, if provided, will only read data from the specified shard.
+
+    Returns:
+      filepattern str
+    """
+    shard_str = "-%05d" % shard if shard is not None else ""
+    if mode == problem.DatasetSplit.TRAIN:
+      path = os.path.join(data_dir, "librispeech")
+      suffix = "train"
+    elif mode in [problem.DatasetSplit.EVAL, tf.estimator.ModeKeys.PREDICT]:
+      path = os.path.join(data_dir, "librispeech_clean")
+      suffix = "dev"
+    else:
+      assert mode == problem.DatasetSplit.TEST
+      path = os.path.join(data_dir, "librispeech_clean")
+      suffix = "test"
+
+    return "%s-%s%s*" % (path, suffix, shard_str)
 
 
 @registry.register_problem()

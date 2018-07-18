@@ -39,7 +39,7 @@ def eval(model_config, ckpt):
 
     while True:
         input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, model_config, False)
-        fetches = [graph.objs[0]['preds'], graph.loss, graph.global_step,
+        fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
                    graph.perplexity]
         preds, loss, step, perplexity = sess.run(fetches, input_feed)
         perplexitys.append(perplexity)
@@ -51,28 +51,24 @@ def eval(model_config, ckpt):
             report.append('%s:' % str(line_id))
             line_id += 1
 
-            for i in range(model_config.max_abbrs):
-                if gt_target[i][2] == 0:
-                   continue
+            if gt_target[-1] == pred[0:1] :
+                correct_cnt += 1
+            if gt_target[-1] in pred[0:2]:
+                correct_cnt2 += 1
+            if gt_target[-1] in pred[0:3]:
+                correct_cnt3 += 1
+            if gt_target[-1] in pred[0:4]:
+                correct_cnt4 += 1
+            if gt_target[-1] in pred[0:5]:
+                correct_cnt5 += 1
+            total_cnt += 1
 
-                if gt_target[i][-1] == pred[i][0:1] :
-                    correct_cnt += 1
-                if gt_target[i][-1] in pred[i][0:2]:
-                    correct_cnt2 += 1
-                if gt_target[i][-1] in pred[i][0:3]:
-                    correct_cnt3 += 1
-                if gt_target[i][-1] in pred[i][0:4]:
-                    correct_cnt4 += 1
-                if gt_target[i][-1] in pred[i][0:5]:
-                    correct_cnt5 += 1
-                total_cnt += 1
+            abbr_id = gt_target[1]
 
-                abbr_id = gt_target[i][1]
-
-                report.append('Abbr:%s\tPred:%s\tGt:%s\t' %
-                              (data.id2abbr[abbr_id],
-                               ';'.join([data.id2sense[loop] for loop in pred[i]]),
-                               data.id2sense[gt_target[i][-1]]))
+            report.append('Abbr:%s\tPred:%s\tGt:%s\t' %
+                          (data.id2abbr[abbr_id],
+                           ';'.join([data.id2sense[loop] for loop in pred]),
+                           data.id2sense[gt_target[-1]]))
             report.append('')
 
         if exclude_cnt > 0:

@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """IMDB Sentiment Classification Problem."""
 
 from __future__ import absolute_import
@@ -21,9 +20,6 @@ from __future__ import print_function
 
 import os
 import tarfile
-
-# Dependency imports
-
 from tensor2tensor.data_generators import generator_utils
 from tensor2tensor.data_generators import problem
 from tensor2tensor.data_generators import text_problems
@@ -99,3 +95,16 @@ class SentimentIMDB(text_problems.Text2ClassProblem):
           "inputs": doc,
           "label": int(label),
       }
+
+
+@registry.register_problem
+class SentimentIMDBCharacters(SentimentIMDB):
+  """IMDB sentiment classification, character level."""
+
+  @property
+  def vocab_type(self):
+    return text_problems.VocabType.CHARACTER
+
+  @property
+  def task_id(self):
+    return problem.TaskID.EN_CHR_SENT
