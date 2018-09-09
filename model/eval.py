@@ -7,9 +7,10 @@ import tensorflow as tf
 import numpy as np
 
 import time
+import glob
 from datetime import datetime
-from os.path import exists
-from os import makedirs
+from os.path import exists, join
+from os import makedirs, listdir, remove
 
 from model.model_config import get_args
 
@@ -92,6 +93,22 @@ def eval(model_config, ckpt):
     f.write(report)
     f.close()
     print('Eval Finished using %s.' % str(span))
+    return float(acc)
+
+
+def get_best_acc(model_config):
+    if not exists(model_config.resultdir):
+        makedirs(model_config.resultdir)
+    best_acc_file = join(model_config.resultdir, 'best_acc')
+    if exists(best_acc_file):
+        return float(open(best_acc_file).readline())
+    else:
+        return 0.0
+
+
+def write_best_acc(model_config, acc):
+    best_acc_file = join(model_config.resultdir, 'best_acc')
+    open(best_acc_file, 'w').write(str(acc))
 
 
 if __name__ == '__main__':
@@ -110,13 +127,36 @@ if __name__ == '__main__':
     from model.model_config import DummyConfig, BaseConfig
     if args.mode == 'dummy':
         model_config = DummyConfig()
+        best_acc = get_best_acc(model_config)
         while True:
             ckpt = get_ckpt(model_config.modeldir, model_config.logdir)
             if ckpt:
-                eval(model_config, ckpt)
+                acc = eval(model_config, ckpt)
+                if acc > best_acc:
+                    best_acc = acc
+                    write_best_acc(model_config, best_acc)
+                    for file in listdir(model_config.modeldir):
+                        step = ckpt[ckpt.rindex('model.ckpt-') + len('model.ckpt-'):-1]
+                        if step not in file:
+                            remove(model_config.modeldir + file)
+                else:
+                    for fl in glob.glob(ckpt + '*'):
+                        remove(fl)
     elif args.mode == 'base':
         model_config = BaseConfig()
+        best_acc = get_best_acc(model_config)
         while True:
             ckpt = get_ckpt(model_config.modeldir, model_config.logdir)
             if ckpt:
-                eval(model_config, ckpt)
+                acc = eval(model_config, ckpt)
+                if acc > best_acc:
+                    best_acc = acc
+                    write_best_acc(model_config, best_acc)
+                    for file in listdir(model_config.modeldir):
+                        step = ckpt[ckpt.rindex('model.ckpt-') + len('model.ckpt-'):-1]
+                        if step not in file:
+                            remove(model_config.modeldir + file)
+                else:
+                    for fl in glob.glob(ckpt + '*'):
+                        remove(fl)
+
