@@ -46,6 +46,12 @@ def get_args():
                         help='Size of dimension?')
     parser.add_argument('-ns', '--number_samples', default=0, type=int,
                         help='Number of samples used in Softmax?')
+    parser.add_argument('-ag_mode', '--aggregate_mode', default='selfattn',
+                        help='The mode transform the encoder output to single hidden state')
+    parser.add_argument('-pred_mode', '--predict_mode', default='clas',
+                        help='The mode for prediction, either [clas, match, match_simple]')
+    parser.add_argument('-neg_cnt', '--negative_sampling_count', default=0, type=int,
+                        help='The number of negative sampling for abbr?')
 
     # For Transformer
     parser.add_argument('-pos', '--hparams_pos', default='timing',
@@ -61,9 +67,6 @@ def get_args():
     parser.add_argument('-hub_emb', '--hub_module_embedding', default='',
                         help='The hub module used for extra embedding?')
 
-    # For Our Idea
-    parser.add_argument('-ag_mode', '--aggregate_mode', default='selfattn',
-                        help='The mode transform the encoder output to single hidden state')
 
     # For Test
     parser.add_argument('-test_ckpt', '--test_ckpt', default='',
@@ -103,6 +106,8 @@ class DummyConfig():
     abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
 
     max_context_len = args.max_context_len
+    predict_mode = args.predict_mode
+    negative_sampling_count = args.negative_sampling_count
     aggregate_mode = args.aggregate_mode
     if aggregate_mode is not None:
         aggregate_mode = aggregate_mode.split(':')
@@ -117,6 +122,7 @@ class DummyConfig():
     it_train = args.it_train
 
     if 'add_abbr' in voc_process:
+        # TODO(sanqiang): Add subvoc_abbr
         voc_file = get_path('../wsd_data/medline/subvoc_abbr.txt')
     else:
         voc_file = get_path('../wsd_data/medline/subvoc.txt')
