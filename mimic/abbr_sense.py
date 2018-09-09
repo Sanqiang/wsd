@@ -313,15 +313,15 @@ def clean_longforms(sense_inventory_dict):
 
         for longform in sense.longform_set:
             new_longform = longform
-            while re.search(r'\(.*?\)$|\[.*?\]$|\{.*?\}$', new_longform) and len(new_longform) < 50:
-                new_longform = re.sub(r'\(.*?\)$|\[.*?\]$|\{.*?\}$','', new_longform)
-                # print(longform+ ':\t' + new_longform)
+            while re.search(r'^\[.*?\]| \(.*?\)$| \[.*?\]$| \{.*?\}$', new_longform) and len(new_longform) < 50:
+                new_longform = re.sub(r'^\[.*?\]| \(.*?\)$| \[.*?\]$| \{.*?\}$','', new_longform).strip()
+                # print(longform+ '\t->\t' + new_longform)
 
             if new_longform.lower().strip() in lower_abbr_set:
                 # print('abbr-like longform: %s' % new_longform)
                 continue
 
-            if len(new_longform.lower().strip()) > 0:
+            if len(new_longform) > 0:
                 new_longform_set.add(new_longform)
 
         sense.longform_set = new_longform_set
