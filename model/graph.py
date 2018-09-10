@@ -3,6 +3,7 @@ from tensor2tensor.models import transformer
 from util import constant
 from tensor2tensor.layers import common_attention, common_layers
 import tensorflow_hub as hub
+import numpy as np
 
 
 class BaseGraph:
@@ -108,11 +109,6 @@ class BaseGraph:
 class ContextEncoder(BaseGraph):
     def __init__(self, is_train, model_config, data, embs):
         BaseGraph.__init__(self, is_train, model_config, data)
-        # self.hparams_subword = transformer.transformer_base_subword()
-        # self.hparams_subword.num_heads = self.model_config.num_heads
-        # self.hparams_subword.num_hidden_layers = 3
-        # self.hparams_subword.num_encoder_layers = 3
-        # self.hparams_subword.hidden_size = self.model_config.dimension
         self.embs = embs
 
     def embed_context(self, contexts, abbr_inp_emb):
@@ -150,6 +146,7 @@ class Graph(BaseGraph):
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
 
+            # Use tf.hub text modeling
             self.embed_hub_module = None
             if self.model_config.hub_module_embedding:
                 self.embed_hub_module = hub.Module(
@@ -201,11 +198,13 @@ class Graph(BaseGraph):
             context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
 
         with tf.variable_scope('pred'):
+            # tf.hub text modeling always has 512 dimension vector
             project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
-            proj_w = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
+            sense_embs = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
                                 initializer=tf.contrib.layers.xavier_initializer())
-            proj_b = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
-                                     initializer=tf.contrib.layers.xavier_initializer())
+            if self.model_config.predict_mode == 'clas':
+                sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
+                                             initializer=tf.contrib.layers.xavier_initializer())
 
             abbr_inp_emb = self.embedding_fn(abbr_inp, self.embs)
             abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
@@ -216,23 +215,61 @@ class Graph(BaseGraph):
             #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
             aggregate_state = self.get_aggregate_state(encoder_outputs)
             if self.model_config.hub_module_embedding:
+                # Append embedding from hub text model
                 embed_hub_state = self.embed_hub_module(text_input)
                 aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
 
-            # Instead mask logit, mask proj_w and proj_b for efficiency
-            mask = tf.to_float(tf.sequence_mask(abbr_einp, self.data.sen_cnt)) - tf.to_float(tf.sequence_mask(abbr_sinp, self.data.sen_cnt))
-            proj_w_stack = tf.stack([proj_w for _ in range(self.model_config.batch_size)], axis=0)
-            masked_proj_w = proj_w_stack * tf.expand_dims(mask, 1)
-            proj_b_stack = tf.stack([proj_b for _ in range(self.model_config.batch_size)], axis=0)
-            masked_proj_b = proj_b_stack * mask
-            logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), masked_proj_w), axis=1) + masked_proj_b
-            # logits = tf.matmul(aggregate_state, proj_w) + proj_b
-            # logits *= mask
+            # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
+            # The mask is 2 dimension vector with size [batch_size, sense_size]
+            mask = tf.to_float(tf.sequence_mask(abbr_einp, self.data.sen_cnt)) - tf.to_float(
+                tf.sequence_mask(abbr_sinp, self.data.sen_cnt))
 
-            loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
-            loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
-            loss *= loss_mask
+            logits_negs = []
+            if self.model_config.negative_sampling_count:
+                def generate_neg_abbrs(abbr_sinp, abbr_einp):
+                    res = []
+                    batch_size = np.shape(abbr_sinp)[0]
+                    for batch_i in range(batch_size):
+                        neg_cands = range(
+                            abbr_sinp[batch_i], 1+abbr_einp[batch_i])
+                        r = np.random.choice(
+                            neg_cands, self.model_config.negative_sampling_count, False)
+                        res.append(r)
+                    return res
 
+                neg_abbrs = tf.py_func(
+                    generate_neg_abbrs, [abbr_sinp, abbr_einp], tf.int32)
+                neg_abbrs.set_shape(
+                    self.model_config.batch_size, self.model_config.negative_sampling_count)
+
+            if self.model_config.predict_mode == 'clas':
+                # Instead mask logit, mask proj_w and proj_b for efficiency
+                proj_w_stack = tf.stack([sense_embs for _ in range(self.model_config.batch_size)], axis=0)
+                masked_proj_w = proj_w_stack * tf.expand_dims(mask, 1)
+                proj_b_stack = tf.stack([sense_bias for _ in range(self.model_config.batch_size)], axis=0)
+                masked_proj_b = proj_b_stack * mask
+                logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), masked_proj_w), axis=1) + masked_proj_b
+                # logits = tf.matmul(aggregate_state, proj_w) + proj_b
+                # logits *= mask
+            elif self.model_config.predict_mode == 'match' or self.model_config.predict_mode == 'match_simple':
+                aggregate_state_exp = tf.expand_dims(aggregate_state, axis=-1)
+                mask_exp = tf.expand_dims(mask, 1)
+                cur_embs = tf.expand_dims(sense_embs, 0) * mask_exp
+                logits = tf.reduce_sum(
+                    cur_embs * tf.tile(
+                        aggregate_state_exp, [1, 1, self.data.sen_cnt]),
+                    1)
+            else:
+                raise ValueError("Unsupported prediction mode.")
+
+            if self.model_config.predict_mode != 'match_simple':
+                loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
+                loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
+                loss *= loss_mask
+            else:
+                gather_idx = tf.stack(
+                    [tf.range(self.model_config.batch_size), sense_inp], axis=-1)
+                loss = -tf.reduce_mean(tf.gather_nd(logits, gather_idx))
             pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
             tf.get_variable_scope().reuse_variables()
 
