@@ -39,11 +39,6 @@ FINAL_CLEANED_SENSE_INVENTORY_JSON_PATH = os.path.join(ROOT_PATH, 'final_cleaned
 # common words dict path
 GOOGLE_20K_COMMON_WORDS_VOCAB_PATH = os.path.join(ROOT_PATH, 'google-10000-english', '20k.txt')
 
-COMMON_WORDS_VOCAB_set = set()
-with open(GOOGLE_20K_COMMON_WORDS_VOCAB_PATH, 'r') as google_words:
-    for w in google_words:
-        COMMON_WORDS_VOCAB_set.add(w.strip().lower())
-
 ABBR_WHITELIST = {'CPT 1', '4 ASA', 'HSAN 3', 'HSAN III',
                   'Epi DX', 'MEN 2B', 'CRPS I', 'DIN 1B',
                   'EC Tab', 'Ad Lib', 'EC Cell', 'CHF NOS',
@@ -444,6 +439,11 @@ def clean_senses_by_blacklist_and_common_words(sense_inventory_dict):
     :param sense_inventory_dict:
     :return:
     """
+    COMMON_WORDS_VOCAB_set = set()
+    with open(GOOGLE_20K_COMMON_WORDS_VOCAB_PATH, 'r') as google_words:
+        for w in google_words:
+            COMMON_WORDS_VOCAB_set.add(w.strip().lower())
+
     new_sense_inventory_dict = {}
     invalid_count = 0
 
