@@ -9,8 +9,6 @@ import pandas as pd
 import re
 import json
 
-from mimic.abbr_sense import load_medline_abbr_dict
-
 __author__ = "Rui Meng"
 __email__ = "rui.meng@pitt.edu"
 
