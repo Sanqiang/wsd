@@ -65,11 +65,11 @@ def find_match_longforms(long_sense_dict, chunk_id, chunk_dataframe, output_json
                         sense_present_records = dataset_sense_present_dict.get(sense.cui, [])
                         sense_present_records.append((longform, note_id))
                         dataset_sense_present_dict[sense.cui] = sense_present_records
-                    else:
-                        print('Match by SuffixTree failed, chunk %d, doc %d, sense %d' % (chunk_id, doc_id, sense_id))
+                    # else:
+                    #     print('Match by SuffixTree failed, chunk %d, doc %d, sense %d' % (chunk_id, doc_id, sense_id))
 
-                else:
-                    print('Match by Set failed, chunk %d, doc %d, sense %d' % (chunk_id, doc_id, sense_id))
+                # else:
+                #     print('Match by Set failed, chunk %d, doc %d, sense %d' % (chunk_id, doc_id, sense_id))
 
             note_dict['present_senses'] = note_present_longform_dict
 
