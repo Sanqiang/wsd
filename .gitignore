@@ -1,7 +1,7 @@
 # Created by .ignore support plugin (hsz.mobi)
 __pycache__
 *.log
-.idea/*
+.idea/
 .idea/.DS_Store
 .idea/preferred-vcs.xml
 .idea/sonarlint/
