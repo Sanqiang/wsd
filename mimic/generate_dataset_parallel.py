@@ -43,10 +43,12 @@ def find_match_longforms(long_sense_dict, chunk_id, chunk_dataframe, output_json
     # use a set to quick check if a long form appears in a note
     longform_token_sets = [set(tokenize(lf)) for lf in long_sense_dict.keys()]
 
+    total_doc_num = len(chunk_dataframe)
+
     with open(output_json_path, 'w') as output_json:
         for doc_id, doc_series in chunk_dataframe.iterrows():
-            if doc_id % 1 == 0:
-                print("Processing chunk %d, doc %d..." % (chunk_id, doc_id))
+            if doc_id % 1000 == 0:
+                print("Processing chunk %d, doc %d/%d..." % (chunk_id, doc_id, total_doc_num))
 
             note_dict = doc_series.to_dict()
 
