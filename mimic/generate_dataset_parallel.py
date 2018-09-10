@@ -94,7 +94,7 @@ if __name__ == '__main__':
     sense_inventory_dict, long_sense_dict = load_final_sense_inventory(sense_inventory_path)
 
     chunk_size = 50000
-    n_jobs = 64
+    n_jobs = 16
     mimic_csv_df = pd.read_csv(mimic3_csv_path, chunksize=chunk_size)
 
     if not os.path.exists(output_folder_path):
