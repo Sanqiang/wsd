@@ -117,6 +117,7 @@ class ContextEncoder(BaseGraph):
             return contexts_emb
 
     def context_encoder(self, contexts_emb, contexts, abbr_inp_emb):
+        weights = {}
         contexts_bias = common_attention.attention_bias_ignore_padding(
             tf.to_float(tf.equal(tf.stack(contexts, axis=1),
                                  self.data.voc.encode(constant.PAD))))
@@ -124,9 +125,28 @@ class ContextEncoder(BaseGraph):
                                      1.0 - self.hparams.layer_prepostprocess_dropout)
         encoder_ouput = transformer.transformer_encoder_abbr(
             contexts_emb, contexts_bias, abbr_inp_emb,
-            tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams)
+            tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams,
+            save_weights_to=weights)
 
-        return encoder_ouput
+        return encoder_ouput, weights
+
+
+class PointerNetwork(BaseGraph):
+    def __init__(self, is_train, model_config, data, weights, contexts):
+        BaseGraph.__init__(self, is_train, model_config, data)
+        self.weights = weights
+        self.contexts = tf.stack(contexts, axis=1)
+
+    def getLogitFromFirstSelfAttnDist(self):
+        attn_dist = tf.reduce_sum(list(self.weights.values())[0][:, 0, :, :], axis=1)
+
+        batch_nums = tf.range(0, limit=self.model_config.batch_size)
+        batch_nums = tf.expand_dims(batch_nums, 1)
+        batch_nums = tf.tile(batch_nums, [1, self.model_config.max_context_len])
+        indices = tf.stack((batch_nums, self.contexts), axis=2)
+        shape = [self.model_config.batch_size, self.data.voc.vocab_size()]
+        projected_attn_dist = tf.scatter_nd(indices, attn_dist, shape)
+        return projected_attn_dist
 
 
 class Graph(BaseGraph):
@@ -210,7 +230,7 @@ class Graph(BaseGraph):
             abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
             contexts_emb = tf.stack(context_encoder.embed_context(contexts, abbr_inp_emb), axis=1)
 
-            encoder_outputs = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
+            encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
             # encoder_outputs = transformer.transformer_encoder_addabbr(
             #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
             aggregate_state = self.get_aggregate_state(encoder_outputs)
@@ -261,6 +281,13 @@ class Graph(BaseGraph):
                     1)
             else:
                 raise ValueError("Unsupported prediction mode.")
+
+            if self.model_config.pointer_mode:
+                ptr_network = PointerNetwork(self.is_train, self.model_config, self.data, weights, contexts)
+                if self.model_config.pointer_mode == 'first_dist':
+                    ptr_logits = ptr_network.getLogitFromFirstSelfAttnDist()
+                    # TODO(sanqiang): ptr logit
+                    print('Use Ptr Network with first attn distribution.')
 
             if self.model_config.predict_mode != 'match_simple':
                 loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
