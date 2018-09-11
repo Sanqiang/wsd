@@ -46,9 +46,9 @@ def find_match_longforms(long_sense_dict, chunk_id, chunk_dataframe, output_json
     total_doc_num = len(chunk_dataframe)
 
     with open(output_json_path, 'w') as output_json:
-        for doc_id, doc_series in chunk_dataframe.iterrows():
-            if doc_id % 1000 == 0:
-                print("Processing chunk %d, doc %d/%d..." % (chunk_id, doc_id, total_doc_num))
+        for doc_count, (doc_id, doc_series) in enumerate(chunk_dataframe.iterrows()):
+            if doc_count % 1000 == 0:
+                print("Processing chunk %d, doc %d/%d..." % (chunk_id, doc_count, total_doc_num))
 
             note_dict = doc_series.to_dict()
 
