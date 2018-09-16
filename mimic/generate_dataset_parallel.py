@@ -12,7 +12,7 @@ import re
 import json
 from joblib import Parallel, delayed
 
-from mimic.abbr_sense import load_final_sense_inventory, Sense
+from mimic.build_sense_inventory import load_final_sense_inventory, Sense
 from mimic.string_utils.suffix_tree import SuffixTree
 
 __author__ = "Rui Meng"

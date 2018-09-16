@@ -98,10 +98,13 @@ class Sense():
 
     def to_dict(self):
         sense_dict = {'CUI': self.cui,
-                      'MEDLINE_ID': list(self.medline_id_set),
+                      # 'MEDLINE_ID': list(self.medline_id_set),
                       'COMMON_NAME': list(self.common_name_set),
                       'ABBR': list(self.abbr_set),
-                      'LONGFORM': list(self.longform_set)}
+                      'LONGFORM': list(self.longform_set),
+                      'UMLS': self.original_umls_dicts,
+                      'MEDLINE': self.original_medline_dicts,
+        }
         return sense_dict
 
 
@@ -296,6 +299,37 @@ def load_UMLS_and_MEDLINE_sense_inventory_from_disk():
     return umls_and_medline_sense_dict
 
 
+def merge_UMLS_and_MEDLINE_senses(sense_inventory_dict):
+    for cui, sense in sense_inventory_dict.items():
+
+        for umls_sense in sense.original_umls_dicts:
+            text = umls_sense['STR']
+            if str(umls_sense['TTY']).endswith('AB'):
+                sense.add_abbr(text)
+            else:
+                sense.add_longform(text)
+
+        # print('Before merging medline: \n%s' % str(sense))
+
+        for medline_sense in sense.original_medline_dicts:
+            if 'id' in medline_sense:
+                sense.add_medline_id(medline_sense['id'])
+            sense.add_abbr(medline_sense['abbr'])
+            sense.add_common_name(medline_sense['common_name'])
+            # for longform in medline_sense['longform_list']:
+            #     sense.add_longform(longform)
+
+        # print('After merging medline: \n%s' % str(sense))
+        # print('*' * 30)
+
+    print('\nStats of sense inventory (after merging UMLS and MEDLINE senses)')
+    print('#(sense) = %d' % len(sense_inventory_dict))
+    print('#(abbr) = %d' % np.sum([len(s.abbr_set) for s in sense_inventory_dict.values()]))
+    print('#(long form) = %d' % np.sum([len(s.longform_set) for s in sense_inventory_dict.values()]))
+
+    return sense_inventory_dict
+
+
 def filter_by_cleaned_CUI_for_annotation(sense_inventory_dict):
     """
     The senses for annotation has been cleaned once, therefore we use its CUIs to filter our senses
@@ -458,9 +492,9 @@ def clean_senses_by_blacklist_and_common_words(sense_inventory_dict):
             tokenized_common_name = common_name.lower().split()
             if len(tokenized_common_name) == 1 \
                     and common_name in COMMON_WORDS_VOCAB_set:
-                # print(sense)
+                print(sense)
                 if len(sense.common_name_set) == 1 and len(sense.longform_set) < 6: # and len(tokenized_common_name[0]) > 3
-                    # print('FIND INVALID!\n')
+                    print('FIND INVALID!\n')
                     common_name_valid_flag = False
                 # print('-' * 30)
 
@@ -470,10 +504,10 @@ def clean_senses_by_blacklist_and_common_words(sense_inventory_dict):
             invalid_count += 1
 
 
-    print('\nStats of sense inventory (after clearning invalid senses)')
-    print('#(sense) = %d' % len(sense_inventory_dict))
-    print('#(abbr) = %d' % np.sum([len(s.abbr_set) for s in sense_inventory_dict.values()]))
-    print('#(long form) = %d' % np.sum([len(s.longform_set) for s in sense_inventory_dict.values()]))
+    print('\nStats of sense inventory (after cleaning invalid senses)')
+    print('#(sense) = %d' % len(new_sense_inventory_dict))
+    print('#(abbr) = %d' % np.sum([len(s.abbr_set) for s in new_sense_inventory_dict.values()]))
+    print('#(long form) = %d' % np.sum([len(s.longform_set) for s in new_sense_inventory_dict.values()]))
 
     print('#(invalid sense) = %d' % invalid_count)
 
@@ -510,31 +544,6 @@ def load_final_sense_inventory(path = FINAL_CLEANED_SENSE_INVENTORY_PICKLE_PATH)
 
     return sense_inventory_dict, long_sense_dict
 
-
-def merge_UMLS_and_MEDLINE_senses(sense_inventory_dict):
-    for cui, sense in sense_inventory_dict.items():
-
-        for umls_sense in sense.original_umls_dicts:
-            text = umls_sense['STR']
-            if str(umls_sense['TTY']).endswith('AB'):
-                sense.add_abbr(text)
-            else:
-                sense.add_longform(text)
-
-        # print('Before merging medline: \n%s' % str(sense))
-
-        for medline_sense in sense.original_medline_dicts:
-            if 'id' in medline_sense:
-                sense.add_medline_id(medline_sense['id'])
-            sense.add_abbr(medline_sense['abbr'])
-            sense.add_common_name(medline_sense['common_name'])
-            # for longform in medline_sense['longform_list']:
-            #     sense.add_longform(longform)
-
-        # print('After merging medline: \n%s' % str(sense))
-        # print('*' * 30)
-
-    return sense_inventory_dict
 
 if __name__ == '__main__':
     # sense_inventory_dict = build_sense_inventory()
