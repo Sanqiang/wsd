@@ -117,6 +117,7 @@ class ContextEncoder(BaseGraph):
             return contexts_emb
 
     def context_encoder(self, contexts_emb, contexts, abbr_inp_emb):
+        weights = {}
         contexts_bias = common_attention.attention_bias_ignore_padding(
             tf.to_float(tf.equal(tf.stack(contexts, axis=1),
                                  self.data.voc.encode(constant.PAD))))
@@ -124,9 +125,28 @@ class ContextEncoder(BaseGraph):
                                      1.0 - self.hparams.layer_prepostprocess_dropout)
         encoder_ouput = transformer.transformer_encoder_abbr(
             contexts_emb, contexts_bias, abbr_inp_emb,
-            tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams)
+            tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams,
+            save_weights_to=weights)
 
-        return encoder_ouput
+        return encoder_ouput, weights
+
+
+class PointerNetwork(BaseGraph):
+    def __init__(self, is_train, model_config, data, weights, contexts):
+        BaseGraph.__init__(self, is_train, model_config, data)
+        self.weights = weights
+        self.contexts = tf.stack(contexts, axis=1)
+
+    def getLogitFromFirstSelfAttnDist(self):
+        attn_dist = tf.reduce_sum(list(self.weights.values())[0][:, 0, :, :], axis=1)
+
+        batch_nums = tf.range(0, limit=self.model_config.batch_size)
+        batch_nums = tf.expand_dims(batch_nums, 1)
+        batch_nums = tf.tile(batch_nums, [1, self.model_config.max_context_len])
+        indices = tf.stack((batch_nums, self.contexts), axis=2)
+        shape = [self.model_config.batch_size, self.data.voc.vocab_size()]
+        projected_attn_dist = tf.scatter_nd(indices, attn_dist, shape)
+        return projected_attn_dist
 
 
 class Graph(BaseGraph):
@@ -145,6 +165,8 @@ class Graph(BaseGraph):
                 self.embs = tf.get_variable(
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
+                np_mask = np.loadtxt(self.model_config.abbr_mask_file)
+                self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
 
             # Use tf.hub text modeling
             self.embed_hub_module = None
@@ -189,8 +211,6 @@ class Graph(BaseGraph):
 
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
-            abbr_sinp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense__sinput')
-            abbr_einp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense_einput')
 
             text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
 
@@ -210,7 +230,7 @@ class Graph(BaseGraph):
             abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
             contexts_emb = tf.stack(context_encoder.embed_context(contexts, abbr_inp_emb), axis=1)
 
-            encoder_outputs = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
+            encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
             # encoder_outputs = transformer.transformer_encoder_addabbr(
             #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
             aggregate_state = self.get_aggregate_state(encoder_outputs)
@@ -221,26 +241,7 @@ class Graph(BaseGraph):
 
             # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
             # The mask is 2 dimension vector with size [batch_size, sense_size]
-            mask = tf.to_float(tf.sequence_mask(abbr_einp, self.data.sen_cnt)) - tf.to_float(
-                tf.sequence_mask(abbr_sinp, self.data.sen_cnt))
-
-            logits_negs = []
-            if self.model_config.negative_sampling_count:
-                def generate_neg_abbrs(abbr_sinp, abbr_einp):
-                    res = []
-                    batch_size = np.shape(abbr_sinp)[0]
-                    for batch_i in range(batch_size):
-                        neg_cands = range(
-                            abbr_sinp[batch_i], 1+abbr_einp[batch_i])
-                        r = np.random.choice(
-                            neg_cands, self.model_config.negative_sampling_count, False)
-                        res.append(r)
-                    return res
-
-                neg_abbrs = tf.py_func(
-                    generate_neg_abbrs, [abbr_sinp, abbr_einp], tf.int32)
-                neg_abbrs.set_shape(
-                    self.model_config.batch_size, self.model_config.negative_sampling_count)
+            mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
             if self.model_config.predict_mode == 'clas':
                 # Instead mask logit, mask proj_w and proj_b for efficiency
@@ -262,6 +263,13 @@ class Graph(BaseGraph):
             else:
                 raise ValueError("Unsupported prediction mode.")
 
+            if self.model_config.pointer_mode:
+                ptr_network = PointerNetwork(self.is_train, self.model_config, self.data, weights, contexts)
+                if self.model_config.pointer_mode == 'first_dist':
+                    ptr_logits = ptr_network.getLogitFromFirstSelfAttnDist()
+                    # TODO(sanqiang): ptr logit
+                    print('Use Ptr Network with first attn distribution.')
+
             if self.model_config.predict_mode != 'match_simple':
                 loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
                 loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
@@ -278,8 +286,6 @@ class Graph(BaseGraph):
             'text_input': text_input,
             'abbr_inp': abbr_inp,
             'sense_inp': sense_inp,
-            'abbr_sinp': abbr_sinp,
-            'abbr_einp': abbr_einp,
             'pred': pred,
         }
         return loss, obj

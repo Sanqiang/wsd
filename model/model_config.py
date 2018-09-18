@@ -50,6 +50,8 @@ def get_args():
                         help='The mode transform the encoder output to single hidden state')
     parser.add_argument('-pred_mode', '--predict_mode', default='clas',
                         help='The mode for prediction, either [clas, match, match_simple]')
+    parser.add_argument('-ptr_mode', '--pointer_mode', default=None,
+                        help='The mode for pointer network, either [none, first_dist]')
     parser.add_argument('-neg_cnt', '--negative_sampling_count', default=0, type=int,
                         help='The number of negative sampling for abbr?')
 
@@ -107,8 +109,10 @@ class DummyConfig():
 
     max_context_len = args.max_context_len
     predict_mode = args.predict_mode
+    # TODO(sanqiang): add neg sampling when new data comes
     negative_sampling_count = args.negative_sampling_count
     aggregate_mode = args.aggregate_mode
+    pointer_mode = args.pointer_mode
     if aggregate_mode is not None:
         aggregate_mode = aggregate_mode.split(':')
     subword_vocab_size = 1
@@ -145,13 +149,16 @@ class DummyConfig():
 
 
 class BaseConfig(DummyConfig):
-    voc_file = get_path('../wsd_data/medline/subvoc.txt')
+    voc_file = get_path('../wsd_data/mimic/subvocab')
 
-    train_file = get_path('../wsd_data/medline/train.txt')
-    eval_file = get_path('../wsd_data/medline/eval.txt')
+    train_file = get_path('../wsd_data/mimic/train')
+    train_pickle = get_path('../wsd_data/mimic/train.pkl')
+    eval_file = get_path('../wsd_data/mimic/eval')
 
-    abbr_common_file = get_path('../wsd_data/medline/abbr_common.txt')
-    abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
+    abbr_file = get_path('../wsd_data/mimic/abbr')
+    cui_file = get_path('../wsd_data/mimic/cui')
+    abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask')
+    # abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
 
     save_model_secs = 600
     model_print_freq = 1000
