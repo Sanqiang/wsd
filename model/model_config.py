@@ -164,3 +164,21 @@ class BaseConfig(DummyConfig):
     model_print_freq = 1000
 
 
+class DataSetConfig(DummyConfig):
+    """
+    Base configuration for different datasets.
+    """
+    def __init__(self, dataset_base_path='../wsd_data/mimic/'):
+        self.voc_file = get_path(dataset_base_path + 'subvocab')
+
+        self.train_file = get_path(dataset_base_path + 'train')
+        self.train_pickle = get_path(dataset_base_path + 'train.pkl')
+        self.eval_file = get_path(dataset_base_path + 'eval')
+
+        self.abbr_file = get_path(dataset_base_path + 'abbr')
+        self.cui_file = get_path(dataset_base_path + 'cui')
+        self.abbr_mask_file = get_path(dataset_base_path + 'abbr_mask')
+        # self.abbr_rare_file = get_path(dataset_base_path + '/abbr_rare.txt')
+
+        self.save_model_secs = 600
+        self.model_print_freq = 1000
