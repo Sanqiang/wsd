@@ -15,7 +15,7 @@ def get_feed(objs, data, model_config, is_train):
     input_feed = {}
     exclude_cnt = 0
     for obj in objs:
-        tmp_contexts, tmp_targets, tmp_lines, tmp_sense_inps, tmp_abbr_sinps, tmp_abbr_einps = [], [], [], [], [], []
+        tmp_contexts, tmp_targets, tmp_lines = [], [], []
         cnt = 0
         while cnt < model_config.batch_size:
             if is_train:
@@ -28,7 +28,7 @@ def get_feed(objs, data, model_config, is_train):
                 if sample is None:
                     sample = {}
                     sample['contexts'] = [0] * model_config.max_context_len
-                    sample['target'] = [0, 0, 0]
+                    sample['target'] = [0, 0, 0, 0]
                     sample['line'] = ''
                     exclude_cnt += 1 # Assume eval use single GPU
 
@@ -54,21 +54,14 @@ def get_feed(objs, data, model_config, is_train):
             tmp_targets[batch_idx][2]
             for batch_idx in range(model_config.batch_size)
         ]
-        input_feed[obj['abbr_sinp'].name] = [
-            data.abbrs_pos[tmp_targets[batch_idx][1]]['s_i']
-            for batch_idx in range(model_config.batch_size)
-        ]
-        input_feed[obj['abbr_einp'].name] = [
-            data.abbrs_pos[tmp_targets[batch_idx][1]]['e_i']
-            for batch_idx in range(model_config.batch_size)
-        ]
+
     return input_feed, exclude_cnt, tmp_targets
 
 def get_session_config():
     config = tf.ConfigProto(allow_soft_placement=True)
     # config.log_device_placement = True
     config.gpu_options.allocator_type = "BFC"
-    # config.gpu_options.allow_growth = True
+    config.gpu_options.allow_growth = True
     return config
 
 

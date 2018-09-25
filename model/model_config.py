@@ -149,13 +149,16 @@ class DummyConfig():
 
 
 class BaseConfig(DummyConfig):
-    voc_file = get_path('../wsd_data/medline/subvoc.txt')
+    voc_file = get_path('../wsd_data/mimic/subvocab')
 
-    train_file = get_path('../wsd_data/medline/train.txt')
-    eval_file = get_path('../wsd_data/medline/eval.txt')
+    train_file = get_path('../wsd_data/mimic/train')
+    train_pickle = get_path('../wsd_data/mimic/train.pkl')
+    eval_file = get_path('../wsd_data/mimic/eval')
 
-    abbr_common_file = get_path('../wsd_data/medline/abbr_common.txt')
-    abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
+    abbr_file = get_path('../wsd_data/mimic/abbr')
+    cui_file = get_path('../wsd_data/mimic/cui')
+    abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask')
+    # abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
 
     save_model_secs = 600
     model_print_freq = 1000

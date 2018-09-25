@@ -165,6 +165,8 @@ class Graph(BaseGraph):
                 self.embs = tf.get_variable(
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
+                np_mask = np.loadtxt(self.model_config.abbr_mask_file)
+                self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
 
             # Use tf.hub text modeling
             self.embed_hub_module = None
@@ -197,6 +199,8 @@ class Graph(BaseGraph):
                                                           global_step=self.global_step)
                     self.increment_global_step = tf.assign_add(self.global_step,
                                                                self.model_config.batch_size * self.model_config.num_gpus)
+                else:
+                    self.losses_eval = losses[0] # In eval, single cpu/gpu is used.
 
                 self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
@@ -209,8 +213,6 @@ class Graph(BaseGraph):
 
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
-            abbr_sinp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense__sinput')
-            abbr_einp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense_einput')
 
             text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
 
@@ -241,26 +243,7 @@ class Graph(BaseGraph):
 
             # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
             # The mask is 2 dimension vector with size [batch_size, sense_size]
-            mask = tf.to_float(tf.sequence_mask(abbr_einp, self.data.sen_cnt)) - tf.to_float(
-                tf.sequence_mask(abbr_sinp, self.data.sen_cnt))
-
-            logits_negs = []
-            if self.model_config.negative_sampling_count:
-                def generate_neg_abbrs(abbr_sinp, abbr_einp):
-                    res = []
-                    batch_size = np.shape(abbr_sinp)[0]
-                    for batch_i in range(batch_size):
-                        neg_cands = range(
-                            abbr_sinp[batch_i], 1+abbr_einp[batch_i])
-                        r = np.random.choice(
-                            neg_cands, self.model_config.negative_sampling_count, False)
-                        res.append(r)
-                    return res
-
-                neg_abbrs = tf.py_func(
-                    generate_neg_abbrs, [abbr_sinp, abbr_einp], tf.int32)
-                neg_abbrs.set_shape(
-                    self.model_config.batch_size, self.model_config.negative_sampling_count)
+            mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
             if self.model_config.predict_mode == 'clas':
                 # Instead mask logit, mask proj_w and proj_b for efficiency
@@ -305,8 +288,6 @@ class Graph(BaseGraph):
             'text_input': text_input,
             'abbr_inp': abbr_inp,
             'sense_inp': sense_inp,
-            'abbr_sinp': abbr_sinp,
-            'abbr_einp': abbr_einp,
             'pred': pred,
         }
         return loss, obj
