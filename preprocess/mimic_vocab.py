@@ -27,7 +27,7 @@ for file in listdir(PATH_PROCESSED_FODER):
         if 'abbr|' not in line:
             continue
         # Split the train and eval data
-        if rd.random() < 0.005:
+        if rd.random() <= 0.025:
             eval_lines.append(line)
         else:
             c.update(line.split())
@@ -83,3 +83,4 @@ for abbr in abbr2cui:
     for cui in abbr2cui[abbr]:
         mask[abbr2id[abbr], cui2id[cui]] = True
 np.savetxt(PATH_ABBR_MASK, mask)
+print('Generate abbr/cui/mask.')

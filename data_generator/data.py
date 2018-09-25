@@ -56,7 +56,7 @@ class Data:
         for line in open(self.model_config.abbr_rare_file):
             self.abbrs_filterout.add(line.strip())
 
-    def process_line(self, line):
+    def process_line(self, line, line_id):
         contexts = []
         targets = []
         words = line.split()
@@ -78,7 +78,7 @@ class Data:
                 abbr_id = self.abbr2id[abbr]
                 if sense in self.sense2id:
                     sense_id = self.sense2id[sense]
-                    targets.append([id, abbr_id, sense_id])
+                    targets.append([id, abbr_id, sense_id, line_id])
             else:
                 wid = self.voc.encode(word)
             contexts.extend(wid)
@@ -113,7 +113,7 @@ class Data:
             obj = {
                 'contexts': cur_contexts,
                 'target': target,
-                'line': line
+                'line': line,
             }
             objs.append(obj)
         return objs
@@ -125,7 +125,7 @@ class Data:
         self.datas = []
         line_id = 0
         for line in open(path):
-            objs = self.process_line(line)
+            objs = self.process_line(line, line_id)
             self.datas.extend(objs)
             line_id += 1
             if line_id % 10000 == 0:
@@ -166,12 +166,10 @@ class TrainData(Data):
                 i += 1
                 continue
 
-            objs = self.process_line(line)
+            objs = self.process_line(line, i)
             if len(objs) > 0:
                 for obj in objs:
                     yield obj
-            else:
-                print('error obj:%s' % objs)
             i += 1
 
 

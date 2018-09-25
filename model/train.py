@@ -15,7 +15,7 @@ def get_feed(objs, data, model_config, is_train):
     input_feed = {}
     exclude_cnt = 0
     for obj in objs:
-        tmp_contexts, tmp_targets, tmp_lines, tmp_sense_inps = [], [], [], []
+        tmp_contexts, tmp_targets, tmp_lines = [], [], []
         cnt = 0
         while cnt < model_config.batch_size:
             if is_train:
@@ -28,7 +28,7 @@ def get_feed(objs, data, model_config, is_train):
                 if sample is None:
                     sample = {}
                     sample['contexts'] = [0] * model_config.max_context_len
-                    sample['target'] = [0, 0, 0]
+                    sample['target'] = [0, 0, 0, 0]
                     sample['line'] = ''
                     exclude_cnt += 1 # Assume eval use single GPU
 

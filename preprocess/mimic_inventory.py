@@ -102,6 +102,10 @@ def unify_abbr(ignore_unigram_longform=True):
                     estimate_abbrs = set(guess_abbrs(longform))
                     # Due to some error in inventory (e.g. therapeutic abortion occurs in both ea and ta), we do a postprocess.
                     if abbr in estimate_abbrs:
+                        # if rmapper[longform][0] == abbr:
+                        #     print(cui)
+                        #     print(rmapper[longform][1])
+                        #     print('=====')
                         rmapper[longform] = (abbr, cui)
                     if abbr != rmapper[longform][0] and abbr in estimate_abbrs and rmapper[longform][0] in estimate_abbrs:
                         assert 'fatal error! a longform belongs to two correct abbrs.'

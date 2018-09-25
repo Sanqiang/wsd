@@ -35,41 +35,37 @@ def eval(model_config, ckpt):
     total_cnt = 0.0
     correct_cnt, correct_cnt2, correct_cnt3, correct_cnt4, correct_cnt5 = 0.0, 0.0, 0.0, 0.0, 0.0
     report = []
-    line_id = 1
     start_time = datetime.now()
 
     while True:
         input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, model_config, False)
         fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
-                   graph.perplexity]
-        preds, loss, step, perplexity = sess.run(fetches, input_feed)
+                   graph.perplexity, graph.losses_eval]
+        preds, loss, step, perplexity, losses_eval = sess.run(fetches, input_feed)
         perplexitys.append(perplexity)
 
         for batch_id in range(model_config.batch_size - exclude_cnt):
             gt_target = gt_targets[batch_id]
             pred = preds[batch_id]
 
-            report.append('%s:' % str(line_id))
-            line_id += 1
-
-            if gt_target[-1] == pred[0:1] :
+            if gt_target[2] == pred[0:1] :
                 correct_cnt += 1
-            if gt_target[-1] in pred[0:2]:
+            if gt_target[2] in pred[0:2]:
                 correct_cnt2 += 1
-            if gt_target[-1] in pred[0:3]:
+            if gt_target[2] in pred[0:3]:
                 correct_cnt3 += 1
-            if gt_target[-1] in pred[0:4]:
+            if gt_target[2] in pred[0:4]:
                 correct_cnt4 += 1
-            if gt_target[-1] in pred[0:5]:
+            if gt_target[2] in pred[0:5]:
                 correct_cnt5 += 1
             total_cnt += 1
 
             abbr_id = gt_target[1]
 
-            report.append('Abbr:%s\tPred:%s\tGt:%s\t' %
+            report.append('Abbr:%s\tPred:%s\tGt:%s\tline:%s with step %s with loss %s.' %
                           (data.id2abbr[abbr_id],
                            ';'.join([data.id2sense[loop] for loop in pred]),
-                           data.id2sense[gt_target[-1]]))
+                           data.id2sense[gt_target[2]], gt_target[3], gt_target[0], losses_eval[batch_id]))
             report.append('')
 
         if exclude_cnt > 0:
