@@ -3,8 +3,8 @@ from os.path import isfile, join, exists
 from os import remove, makedirs
 from shutil import copy2
 
-
 ckpt_prefix = 'model.ckpt-'
+
 
 def find_train_ckptfiles(path, is_delete):
     """Find checkpoint files based on its max steps.
@@ -26,6 +26,7 @@ def find_train_ckptfiles(path, is_delete):
 
     model_files = get_model_files(max_step, path)
     return model_files, max_step
+
 
 def get_model_files(steps, path):
     if not isinstance(steps, list):
@@ -69,9 +70,7 @@ def backup_log(logdir):
     for file in files:
         remove(logdir + file)
 
+
 def find_train_ckptpaths(outdir):
     _, step = find_train_ckptfiles(outdir, False)
     return outdir + ckpt_prefix + str(step)
-
-
-

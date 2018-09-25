@@ -1,6 +1,8 @@
 from data_generator.vocab import Vocab
 from util.constant import NONTAR, UNK, BOS, EOS, PAD
 import random as rd
+import os
+import pickle
 from collections import defaultdict
 
 
@@ -13,6 +15,18 @@ class Data:
         self.voc = Vocab(model_config, model_config.voc_file)
 
     def populate_abbr(self):
+        self.abbr2id, self.id2abbr = {}, []
+        self.sense2id, self.id2sense = {}, []
+        self.id2abbr = [abbr.strip() for abbr in
+                        open(self.model_config.abbr_file).readlines()]
+        self.abbr2id = dict(zip(self.id2abbr, range(len(self.id2abbr))))
+        self.id2sense = [cui.strip() for cui in
+                         open(self.model_config.cui_file).readlines()]
+        self.sense2id = dict(zip(self.id2sense, range(len(self.id2sense))))
+        self.sen_cnt = len(self.id2sense)
+
+    # Deprecated
+    def populate_abbr_deprecated(self):
         def update(item, item2id, id2item):
             if item not in item2id:
                 item2id[item] = len(id2item)
@@ -51,8 +65,8 @@ class Data:
             if word.startswith('abbr|'):
                 pair = word.split('|')
                 abbr = pair[1]
-                if abbr in self.abbrs_filterout:
-                    continue
+                # if abbr in self.abbrs_filterout:
+                #     continue
                 sense = pair[2]
 
                 if 'add_abbr' in self.model_config.voc_process:
@@ -62,8 +76,8 @@ class Data:
                 if abbr not in self.abbr2id:
                     continue
                 abbr_id = self.abbr2id[abbr]
-                if abbr + '|' + sense in self.sense2id:
-                    sense_id = self.sense2id[abbr + '|' + sense]
+                if sense in self.sense2id:
+                    sense_id = self.sense2id[sense]
                     targets.append([id, abbr_id, sense_id])
             else:
                 wid = self.voc.encode(word)
@@ -105,11 +119,20 @@ class Data:
         return objs
 
     def populate_data(self, path):
+        # if os.path.exists(self.model_config.train_pickle):
+        #     with open(self.model_config.train_pickle, 'rb') as inv_file:
+        #         self.datas = pickle.load(inv_file)
         self.datas = []
+        line_id = 0
         for line in open(path):
             objs = self.process_line(line)
             self.datas.extend(objs)
+            line_id += 1
+            if line_id % 10000 == 0:
+                print('Process %s lines.' % line_id)
             # break
+        # with open(self.model_config.train_pickle, 'wb') as output_file:
+        #     pickle.dump(self.datas, output_file)
 
 
 class TrainData(Data):
@@ -143,8 +166,12 @@ class TrainData(Data):
                 i += 1
                 continue
 
-            obj = self.process_line(line)
-            yield obj
+            objs = self.process_line(line)
+            if len(objs) > 0:
+                for obj in objs:
+                    yield obj
+            else:
+                print('error obj:%s' % objs)
             i += 1
 
 

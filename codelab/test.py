@@ -1,9 +1,15 @@
-import numpy as np
+import json
+from collections import Counter
 
-cands = [[2,3,4,5,6], [4,5,6,7,8]]
-res = []
-for cands_tmp in cands:
-    r = np.random.choice(cands_tmp, 2, False)
-    res.append(r)
 
-print(res)
+c = Counter()
+path = '/Users/sanqiangzhao/git/wsd_data/mimic/final_cleaned_sense_inventory.json'
+for line in open(path):
+    obj = json.loads(line)
+    longforms = obj['LONGFORM']
+    longforms = [longform for longform in longforms if len(longform.split()) >= 2]
+    c.update(longforms)
+
+c = c.most_common()
+for pair in c:
+    print(pair)

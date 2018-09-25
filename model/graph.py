@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensor2tensor.models import transformer
+from tensor2tensor.models import transformer, lstm
 from util import constant
 from tensor2tensor.layers import common_attention, common_layers
 import tensorflow_hub as hub
@@ -131,6 +131,37 @@ class ContextEncoder(BaseGraph):
         return encoder_ouput, weights
 
 
+class LSTMContextEncoder(BaseGraph):
+    def __init__(self, is_train, model_config, data, embs):
+        BaseGraph.__init__(self, is_train, model_config, data)
+        self.hparams = lstm.lstm_seq2seq()
+        self.setup_hparams()
+        self.embs = embs
+
+    def embed_context(self, contexts):
+        with tf.variable_scope('context_embed'):
+            contexts_emb = self.embedding_fn(contexts, self.embs)
+            return contexts_emb
+
+    def context_encoder(self, contexts_emb, contexts, abbr_inp_emb):
+        weights = {}
+        # contexts_bias = common_attention.attention_bias_ignore_padding(
+        #     tf.to_float(tf.equal(tf.stack(contexts, axis=1),
+        #                          self.data.voc.encode(constant.PAD))))
+        contexts_emb = tf.nn.dropout(contexts_emb,
+                                     1.0 - self.hparams.layer_prepostprocess_dropout)
+
+        encoder_ouput, _ = lstm.lstm_bid_encoder(
+            contexts_emb, self.hparams, self.is_train, "lstm_encoder")
+        print(encoder_ouput.shape)
+        # encoder_ouput = transformer.transformer_encoder_abbr(
+        #     contexts_emb, contexts_bias, abbr_inp_emb,
+        #     tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams,
+        #     save_weights_to=weights)
+
+        return encoder_ouput
+
+
 class PointerNetwork(BaseGraph):
     def __init__(self, is_train, model_config, data, weights, contexts):
         BaseGraph.__init__(self, is_train, model_config, data)
@@ -165,6 +196,8 @@ class Graph(BaseGraph):
                 self.embs = tf.get_variable(
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
+                np_mask = np.loadtxt(self.model_config.abbr_mask_file)
+                self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
 
             # Use tf.hub text modeling
             self.embed_hub_module = None
@@ -209,8 +242,6 @@ class Graph(BaseGraph):
 
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
-            abbr_sinp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense__sinput')
-            abbr_einp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense_einput')
 
             text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
 
@@ -229,6 +260,103 @@ class Graph(BaseGraph):
             abbr_inp_emb = self.embedding_fn(abbr_inp, self.embs)
             abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
             contexts_emb = tf.stack(context_encoder.embed_context(contexts, abbr_inp_emb), axis=1)
+
+            encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
+            # encoder_outputs = transformer.transformer_encoder_addabbr(
+            #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
+            aggregate_state = self.get_aggregate_state(encoder_outputs)
+            if self.model_config.hub_module_embedding:
+                # Append embedding from hub text model
+                embed_hub_state = self.embed_hub_module(text_input)
+                aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
+
+            # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
+            # The mask is 2 dimension vector with size [batch_size, sense_size]
+            mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
+
+            if self.model_config.predict_mode == 'clas':
+                # Instead mask logit, mask proj_w and proj_b for efficiency
+                proj_w_stack = tf.stack([sense_embs for _ in range(self.model_config.batch_size)], axis=0)
+                masked_proj_w = proj_w_stack * tf.expand_dims(mask, 1)
+                proj_b_stack = tf.stack([sense_bias for _ in range(self.model_config.batch_size)], axis=0)
+                masked_proj_b = proj_b_stack * mask
+                logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), masked_proj_w), axis=1) + masked_proj_b
+                # logits = tf.matmul(aggregate_state, proj_w) + proj_b
+                # logits *= mask
+            elif self.model_config.predict_mode == 'match' or self.model_config.predict_mode == 'match_simple':
+                aggregate_state_exp = tf.expand_dims(aggregate_state, axis=-1)
+                mask_exp = tf.expand_dims(mask, 1)
+                cur_embs = tf.expand_dims(sense_embs, 0) * mask_exp
+                logits = tf.reduce_sum(
+                    cur_embs * tf.tile(
+                        aggregate_state_exp, [1, 1, self.data.sen_cnt]),
+                    1)
+            else:
+                raise ValueError("Unsupported prediction mode.")
+
+            if self.model_config.pointer_mode:
+                ptr_network = PointerNetwork(self.is_train, self.model_config, self.data, weights, contexts)
+                if self.model_config.pointer_mode == 'first_dist':
+                    ptr_logits = ptr_network.getLogitFromFirstSelfAttnDist()
+                    # TODO(sanqiang): ptr logit
+                    print('Use Ptr Network with first attn distribution.')
+
+            if self.model_config.predict_mode != 'match_simple':
+                loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
+                loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
+                loss *= loss_mask
+            else:
+                gather_idx = tf.stack(
+                    [tf.range(self.model_config.batch_size), sense_inp], axis=-1)
+                loss = -tf.reduce_mean(tf.gather_nd(logits, gather_idx))
+            pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
+            tf.get_variable_scope().reuse_variables()
+
+        obj = {
+            'contexts': contexts,
+            'text_input': text_input,
+            'abbr_inp': abbr_inp,
+            'sense_inp': sense_inp,
+            'pred': pred,
+        }
+        return loss, obj
+
+
+class LSTMGraph(Graph):
+    def __init__(self, is_train, model_config, data):
+        BaseGraph.__init__(self, is_train, model_config, data)
+        self.hparams = lstm.lstm_seq2seq()
+        self.setup_hparams()
+
+    def create_model(self):
+        with tf.variable_scope('variables'):
+            contexts = []
+            for _ in range(self.model_config.max_context_len):
+                contexts.append(
+                    tf.zeros(self.model_config.batch_size, tf.int32, name='context_input'))
+
+            abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
+            sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
+            abbr_sinp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense__sinput')
+            abbr_einp = tf.zeros([self.model_config.batch_size], tf.int32, name='sense_einput')
+
+            text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
+
+        with tf.variable_scope('model'):
+            context_encoder = LSTMContextEncoder(self.is_train, self.model_config, self.data, self.embs)
+
+        with tf.variable_scope('pred'):
+            # tf.hub text modeling always has 512 dimension vector
+            project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
+            sense_embs = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
+                                initializer=tf.contrib.layers.xavier_initializer())
+            if self.model_config.predict_mode == 'clas':
+                sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
+                                             initializer=tf.contrib.layers.xavier_initializer())
+
+            abbr_inp_emb = self.embedding_fn(abbr_inp, self.embs)
+            abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
+            contexts_emb = tf.stack(context_encoder.embed_context(contexts), axis=1)
 
             encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
             # encoder_outputs = transformer.transformer_encoder_addabbr(
@@ -305,8 +433,6 @@ class Graph(BaseGraph):
             'text_input': text_input,
             'abbr_inp': abbr_inp,
             'sense_inp': sense_inp,
-            'abbr_sinp': abbr_sinp,
-            'abbr_einp': abbr_einp,
             'pred': pred,
         }
         return loss, obj
