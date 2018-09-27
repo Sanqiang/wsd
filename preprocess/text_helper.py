@@ -1,11 +1,26 @@
+"""
+Helper functions for pre-processing DataSet.
+-- Simple Tokenizer
+-- Stanford CoreNLP Tokenizer
+-- Pre-processing Pipeline
+-- Other general helper functions
+"""
+
 import re
+import tqdm
+import operator
+import multiprocessing as mp
+from joblib import Parallel, delayed
+from pycorenlp import StanfordCoreNLP
 from util import constant
+
 
 class TokenHelper(object):
 
     @staticmethod
     def is_ascii(s):
         return all(ord(c) < 128 for c in s)
+
 
 class TextHelper(object):
 
@@ -42,4 +57,187 @@ class TextHelper(object):
         return ntokens
 
 
+class TextPreProcessor:
+    """
+    General pipeline for text pre-processing (before tokenizer).
+    -- Initialize pre-processing functions
+    -- Use for single text
+    -- Use for list of texts
+    """
 
+    def __init__(self, process_function_list=None):
+        """
+        Initialize pre-processing functions.
+        For example:
+            -- annotation adder function ("AMI" to "AMI|C0340293")
+            -- pattern remover functions
+            -- DeID replacer function
+
+        :param process_function_list: list of functions, input & output of each functions must be a single text string.
+        """
+        assert isinstance(process_function_list, list)
+        self.process_function_list = [func for func in process_function_list if callable(func)]
+
+    def process_single_text(self, txt):
+        for func in self.process_function_list:
+            txt = func(txt)
+        return txt
+
+    def process_texts(self, txt_list, n_jobs=1):
+        print("Pre-processing texts (n_jobs = %d)..." % n_jobs)
+        txt_list_processed = Parallel(n_jobs=n_jobs, verbose=3)(delayed(self.process_single_text)(txt) for txt in txt_list)
+        return txt_list_processed
+
+
+class CoreNLPTokenizer(object):
+    """
+    Stanford CoreNLP Tokenizer (multiprocessing optimized version).
+    -- Use for single text: process_single_text
+    -- Use for list of texts: process_texts
+    """
+
+    def __init__(self):
+        """
+        Initialize Stanford CoreNLP server.
+
+        Must open CoreNLP server in terminal (in CoreNLP folder) first by:
+        "java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 15000 -quiet"
+        """
+        self.stanford_nlp = StanfordCoreNLP('http://localhost:9000')
+
+    def process_single_text(self, txt):
+        tokens = self.stanford_nlp.annotate(txt, properties={
+            'annotators': 'tokenize',
+            'outputFormat': 'json'
+        })['tokens']
+        content = []
+        for token in tokens:
+            word = token['word']
+            content.append(word)
+        return " ".join(content)
+
+    def _combine_texts(self, txt_list, splitter="\u21F6", max_length=80000):
+        """
+        Combine multiple texts to one text, in order to speed up.
+
+        :param txt_list: List of original text strings
+        :param splitter: A marker string to split multiple texts
+        :param max_length: Maximum length of a combined text
+        :return: List of combined texts
+        """
+        self.splitter = splitter
+
+        print("Combining multiple texts...")
+        multi_texts = []
+        len_count = 0
+        texts_combined = []
+        for txt in tqdm.tqdm(txt_list):
+            temp_len_count = len_count + len(txt)
+
+            if temp_len_count >= max_length:
+                multi_texts.append(self.splitter.join(texts_combined))
+                len_count = 0
+                texts_combined = []
+
+            len_count += len(txt)
+            texts_combined.append(txt)
+        # combine last block of texts
+        multi_texts.append(self.splitter.join(texts_combined))
+        return multi_texts
+
+    def _split_texts(self, multi_texts_sorted):
+        """
+        Split multi-texts to several texts.
+
+        :return: List of splitted texts
+        """
+        # decode to one doc per line
+        print("Splitting combined texts...")
+        texts_split_list = []
+        for multi_doc in tqdm.tqdm(multi_texts_sorted):
+            texts_split_list.extend(multi_doc[1].split(self.splitter))
+        return texts_split_list
+
+    def job(self, idxs, docs, content_queue):
+        for idx, doc in zip(idxs, docs):
+            # try:
+            tokens = self.stanford_nlp.annotate(doc, properties={
+                'annotators': 'tokenize',
+                'outputFormat': 'json'
+            })['tokens']
+            content = []
+            # except TypeError:
+            #     with open("%d-error.txt" % idx, "w") as file:
+            #         file.write(doc)
+
+            for token in tokens:
+                word = token['word']
+                content.append(word)
+            content_queue.put((idx, " ".join(content)))
+
+    def process_texts(self, txt_list, n_jobs=32):
+        """
+        Tokenize list of texts.
+
+        :param txt_list: List of input texts
+        :param n_jobs: Number of workers
+        :return: List of tokenized texts
+        """
+        # combine texts
+        txt_list_combined = self._combine_texts(txt_list)
+
+        print("Tokenizing (n_jobs = %d)..." % n_jobs)
+        write_list = []
+        q = mp.Queue()
+        # how many docs per worker
+        step = len(txt_list_combined) // n_jobs
+        workers = [mp.Process(target=self.job, args=(range(i * step, (i + 1) * step), txt_list_combined[i * step:(i + 1) * step], q))
+                   for i in range(n_jobs - 1)]
+        workers.append(mp.Process(target=self.job, args=(
+            range((n_jobs - 1) * step, len(txt_list_combined)), txt_list_combined[(n_jobs - 1) * step:], q)))
+
+        with tqdm.tqdm(total=len(txt_list_combined)) as pbar:
+            for i in range(n_jobs):
+                workers[i].start()
+            for i in range(len(txt_list_combined)):
+                write_list.append(q.get())
+                pbar.update()
+            for i in range(n_jobs):
+                workers[i].join()
+
+        write_list_sorted = sorted(write_list, key=operator.itemgetter(0))
+        # split multiple texts
+        txt_list_processed = self._split_texts(write_list_sorted)
+        return txt_list_processed
+
+
+############################
+# General Helper Functions
+############################
+
+def sub_patterns(txt, pattern_list, sub_string):
+    """
+    Replace list of patterns to a string.
+
+    :param txt: Single Document String
+    :param pattern_list: A list of Regex patterns (re.compile)
+    :param sub_string: Substitution String
+    :return:Processed Document String
+    """
+    for pattern in pattern_list:
+        txt = re.sub(pattern, sub_string, txt)
+    return txt
+
+
+def white_space_remover(txt):
+    """
+    Remove '\n' and redundant spaces.
+
+    :param txt: Single Document String
+    :return: Processed Document String
+    """
+    # remove all "\n"
+    txt = re.sub(r"\n", " ", txt)
+    # remove all redundant spaces
+    txt = re.sub(r"\s{2,}", " ", txt)
+    return txt
