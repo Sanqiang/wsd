@@ -33,7 +33,7 @@ processor = TextPreProcessor([
     sub_deid_patterns])
 
 # for list of texts
-mimic_txt = processor.process_texts(mimic_txt, 30)
+mimic_txt = processor.process_texts(mimic_txt, n_jobs=30)
 
 
 ######################################
@@ -47,6 +47,6 @@ temp = toknizer.process_single_text(mimic_txt[0])
 print(temp)
 
 # for list of texts
-mimic_txt_tokenized = toknizer.process_texts(mimic_txt, 4)
+mimic_txt_tokenized = toknizer.process_texts(mimic_txt, n_jobs=40)
 print(len(mimic_txt_tokenized))
 print(mimic_txt_tokenized[352])
