@@ -99,7 +99,7 @@ class TextPreProcessor(TextBaseHelper):
 
     def process_texts(self, txt_list, n_jobs=8):
         print("Pre-processing texts (n_jobs = %d)..." % n_jobs)
-        txt_list_processed = Parallel(n_jobs=n_jobs, verbose=3)(delayed(self.process_single_text)(txt) for txt in txt_list)
+        txt_list_processed = Parallel(n_jobs=n_jobs, verbose=1)(delayed(self.process_single_text)(txt) for txt in txt_list)
         return txt_list_processed
 
 
@@ -181,11 +181,11 @@ class CoreNLPTokenizer(TextBaseHelper):
         :param max_length: Maximum length of a combined text
         :return: List of combined texts
         """
-        print("Combining multiple texts...")
+        # print("Combining multiple texts...")
         multi_texts = []
         len_count = 0
         texts_combined = []
-        for txt in tqdm.tqdm(txt_list):
+        for txt in txt_list:
             temp_len_count = len_count + len(txt)
 
             if temp_len_count >= max_length:
@@ -206,9 +206,9 @@ class CoreNLPTokenizer(TextBaseHelper):
         :return: List of splitted texts
         """
         # decode to one doc per line
-        print("Splitting combined texts...")
+        # print("Splitting combined texts...")
         texts_split_list = []
-        for multi_doc in tqdm.tqdm(multi_texts_sorted):
+        for multi_doc in multi_texts_sorted:
             texts_split_list.extend(multi_doc[1].split(self.combine_splitter))
         return texts_split_list
 

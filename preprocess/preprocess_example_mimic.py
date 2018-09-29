@@ -6,7 +6,7 @@ Example for pre-processing functions.
 import os
 import tqdm
 import json
-from preprocess.dataset_helpers.mimic import sub_deid_patterns
+from preprocess.dataset.mimic import sub_deid_patterns_mimic
 from preprocess.text_helper import TextPreProcessor, CoreNLPTokenizer, white_space_remover, sub_patterns
 
 
@@ -30,7 +30,7 @@ print(len(mimic_txt))
 
 processor = TextPreProcessor([
     white_space_remover,
-    sub_deid_patterns])
+    sub_deid_patterns_mimic])
 
 # for list of texts
 mimic_txt = processor.process_texts(mimic_txt, n_jobs=30)
