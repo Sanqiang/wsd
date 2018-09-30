@@ -152,7 +152,7 @@ class BaseConfig(DummyConfig):
     voc_file = get_path('../wsd_data/mimic/subvocab')
 
     train_file = get_path('../wsd_data/mimic/train')
-    train_pickle = get_path('../wsd_data/mimic/train.pkl')
+    # train_pickle = get_path('../wsd_data/mimic/train.pkl')
     eval_file = get_path('../wsd_data/mimic/eval')
 
     abbr_file = get_path('../wsd_data/mimic/abbr')

@@ -42,6 +42,7 @@ if args.mode == 'abbr':
               (abbr, ratio, abbr_incorrect_stat[abbr], abbr_correct_stat[abbr]))
 
 if args.mode == 'pair':
+    total_cnt = 0
     pair_stat = defaultdict(float)
     for line in open(result):
         items = line.split('\t')
@@ -56,7 +57,8 @@ if args.mode == 'pair':
             if hash(pred) > hash(gt):
                 pred, gt = gt, pred
             pair_stat[abbr + '|' + pred + '|' + gt] += 1
+        total_cnt += 1
     pair_stat = sorted(pair_stat.items(), key=operator.itemgetter(1), reverse=True)
 
     for k, v in pair_stat:
-        print('%s\t%s' % (k, v))
+        print('%s\t%s\t%s' % (k, v, float(v)/total_cnt))
