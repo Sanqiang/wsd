@@ -317,6 +317,7 @@ class Graph(BaseGraph):
 
         with tf.variable_scope('extra'):
             if self.is_train:
+                self.def_loss = 0.0
                 if 'def' in self.model_config.extra_loss:
                     aggregate_state_def = tf.contrib.layers.fully_connected(
                         aggregate_state, self.model_config.dimension)
@@ -330,15 +331,16 @@ class Graph(BaseGraph):
                     defs_output = transformer.transformer_encoder(
                         defs_embed, defs_bias, self.hparams)
                     defs_output = tf.reduce_mean(defs_output, axis=1)
-                    def_loss = 1.0-tf.reduce_sum(defs_output * aggregate_state_def, axis=1)
-                    loss += def_loss
+                    self.def_loss = tf.losses.absolute_difference(defs_output, aggregate_state_def)
+                    loss += self.def_loss
 
+                self.style_loss = 0.0
                 if 'stype' in self.model_config.extra_loss:
                     aggregate_state_stype = tf.contrib.layers.fully_connected(
                         aggregate_state, self.model_config.dimension)
                     style_emb = self.embedding_fn(stype_inp, self.stype_embs)
-                    style_loss = 1.0-tf.reduce_sum(style_emb * aggregate_state_stype, axis=1)
-                    loss += style_loss
+                    self.style_loss = tf.losses.absolute_difference(style_emb, aggregate_state_stype)
+                    loss += self.style_loss
 
         obj = {
             'contexts': contexts,

@@ -4,6 +4,7 @@ from model.graph import Graph
 import tensorflow as tf
 from datetime import datetime
 import time
+import numpy as np
 
 from model.model_config import get_args
 
@@ -116,15 +117,20 @@ def train(model_config):
         while True:
             input_feed, _, _ = get_feed(graph.objs, data, model_config, True)
             fetches = [graph.train_op, graph.increment_global_step, graph.global_step,
-                       graph.perplexity, graph.loss]
-            _, _, step, perplexity, loss = sess.run(fetches, input_feed)
+                       graph.perplexity,
+                       graph.loss,
+                       graph.def_loss,
+                       graph.style_loss]
+            _, _, step, perplexity, loss, def_loss, style_loss = sess.run(fetches, input_feed)
             perplexitys.append(perplexity)
 
             if (step - previous_step) > model_config.model_print_freq:
                 end_time = datetime.now()
                 time_span = end_time - start_time
                 start_time = end_time
-                print('Perplexity:\t%f / Loss: %s at step %d using %s.' % (perplexity, loss, step, time_span))
+                print('Perplexity:\t%f at step %d using %s with loss:%s, def_loss:%s, style_loss:%s.'
+                      % (perplexity, step, time_span,
+                         np.mean(loss), np.mean(def_loss), np.mean(style_loss)))
                 perplexitys.clear()
                 previous_step = step
 
