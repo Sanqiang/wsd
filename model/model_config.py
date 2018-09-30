@@ -21,7 +21,7 @@ def get_args():
 
     parser.add_argument('-op', '--optimizer', default='adagrad',
                         help='Which optimizer to use?')
-    parser.add_argument('-lr', '--learning_rate', default=0.01, type=float,
+    parser.add_argument('-lr', '--learning_rate', default=0.1, type=float,
                         help='Value of learning rate?')
     parser.add_argument('-layer_drop', '--layer_prepostprocess_dropout', default=0.0, type=float,
                         help='Dropout rate for data input?')
@@ -74,6 +74,14 @@ def get_args():
     parser.add_argument('-test_ckpt', '--test_ckpt', default='',
                         help='Path for test ckpt checkpoint?')
 
+    # Extra Loss
+    parser.add_argument('-eloss', '--extra_loss', default='',
+                        help='Extra loss for for better sense understanidng? '
+                             'choose from [def, stype], separate by :')
+    parser.add_argument('-max_def_len', '--max_def_len', default=100, type=int,
+                        help='Max of def length?')
+
+
     args = parser.parse_args()
     return args
 
@@ -108,6 +116,7 @@ class DummyConfig():
     abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
 
     max_context_len = args.max_context_len
+    max_def_len = args.max_def_len
     predict_mode = args.predict_mode
     # TODO(sanqiang): add neg sampling when new data comes
     negative_sampling_count = args.negative_sampling_count
@@ -147,6 +156,8 @@ class DummyConfig():
     modeldir = get_path('../' + output_folder + '/model/', environment)
     logdir = get_path('../' + output_folder + '/log/', environment)
 
+    extra_loss = args.extra_loss.split(':')
+
 
 class BaseConfig(DummyConfig):
     voc_file = get_path('../wsd_data/mimic/subvocab')
@@ -159,6 +170,9 @@ class BaseConfig(DummyConfig):
     cui_file = get_path('../wsd_data/mimic/cui')
     abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask')
     # abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
+
+    stype_voc_file = get_path('../wsd_data/mimic/cui_extra_stype.voc')
+    cui_extra_pkl = get_path('../wsd_data/mimic/cui_extra.pkl')
 
     save_model_secs = 600
     model_print_freq = 1000

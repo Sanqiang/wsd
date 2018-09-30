@@ -162,9 +162,19 @@ class Graph(BaseGraph):
 
             with tf.device('/cpu:0'):
                 self.global_step = tf.train.get_or_create_global_step()
+
+                # Vocab embedding
                 self.embs = tf.get_variable(
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
+
+                # Semantic type embedding
+                if 'stype' in self.model_config.extra_loss:
+                    self.stype_embs = tf.get_variable(
+                        'stype_embs', [len(self.data.id2stype), self.model_config.dimension], tf.float32,
+                        initializer=tf.contrib.layers.xavier_initializer())
+
+                # Mask for only predict candidate senses
                 np_mask = np.loadtxt(self.model_config.abbr_mask_file)
                 self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
 
@@ -214,7 +224,17 @@ class Graph(BaseGraph):
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
 
-            text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
+            if self.model_config.hub_module_embedding:
+                text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
+
+            if 'def' in self.model_config.extra_loss:
+                defs = []
+                for _ in range(self.model_config.max_def_len):
+                    defs.append(
+                        tf.zeros(self.model_config.batch_size, tf.int32, name='def_input'))
+
+            if 'stype' in self.model_config.extra_loss:
+                stype_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='stype_input')
 
         with tf.variable_scope('model'):
             context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
@@ -254,7 +274,7 @@ class Graph(BaseGraph):
                 logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), masked_proj_w), axis=1) + masked_proj_b
                 # logits = tf.matmul(aggregate_state, proj_w) + proj_b
                 # logits *= mask
-            elif self.model_config.predict_mode == 'match' or self.model_config.predict_mode == 'match_simple':
+            elif self.model_config.predict_mode == 'match':
                 aggregate_state_exp = tf.expand_dims(aggregate_state, axis=-1)
                 mask_exp = tf.expand_dims(mask, 1)
                 cur_embs = tf.expand_dims(sense_embs, 0) * mask_exp
@@ -272,22 +292,51 @@ class Graph(BaseGraph):
                     # TODO(sanqiang): ptr logit
                     print('Use Ptr Network with first attn distribution.')
 
-            if self.model_config.predict_mode != 'match_simple':
-                loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
-                loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
-                loss *= loss_mask
-            else:
-                gather_idx = tf.stack(
-                    [tf.range(self.model_config.batch_size), sense_inp], axis=-1)
-                loss = -tf.reduce_mean(tf.gather_nd(logits, gather_idx))
+            loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
+            loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
+            loss *= loss_mask
+
             pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
             tf.get_variable_scope().reuse_variables()
 
+        with tf.variable_scope('extra'):
+            if self.is_train:
+                if 'def' in self.model_config.extra_loss:
+                    aggregate_state_def = tf.contrib.layers.fully_connected(
+                        aggregate_state, self.model_config.dimension)
+                    defs_stack = tf.stack(defs, axis=1)
+                    defs_embed = self.embedding_fn(defs_stack, self.embs)
+                    defs_bias = common_attention.attention_bias_ignore_padding(
+                        tf.to_float(tf.equal(defs_stack,
+                                             self.data.voc.encode(constant.PAD))))
+                    defs_embed = tf.nn.dropout(defs_embed,
+                                               1.0 - self.hparams.layer_prepostprocess_dropout)
+                    defs_output = transformer.transformer_encoder(
+                        defs_embed, defs_bias, self.hparams)
+                    defs_output = tf.reduce_mean(defs_output, axis=1)
+                    def_loss = 1.0-tf.reduce_sum(defs_output * aggregate_state_def, axis=1)
+                    loss += def_loss
+
+                if 'stype' in self.model_config.extra_loss:
+                    aggregate_state_stype = tf.contrib.layers.fully_connected(
+                        aggregate_state, self.model_config.dimension)
+                    style_emb = self.embedding_fn(stype_inp, self.stype_embs)
+                    style_loss = 1.0-tf.reduce_sum(style_emb * aggregate_state_stype, axis=1)
+                    loss += style_loss
+
         obj = {
             'contexts': contexts,
-            'text_input': text_input,
             'abbr_inp': abbr_inp,
             'sense_inp': sense_inp,
             'pred': pred,
         }
+        if self.model_config.hub_module_embedding:
+            obj['text_input'] = text_input
+
+        if 'def' in self.model_config.extra_loss:
+            obj['def'] = defs
+
+        if 'stype' in self.model_config.extra_loss:
+            obj['stype'] = stype_inp
+
         return loss, obj
