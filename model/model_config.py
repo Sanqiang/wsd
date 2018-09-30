@@ -52,6 +52,8 @@ def get_args():
                         help='The mode for prediction, either [clas, match, match_simple]')
     parser.add_argument('-ptr_mode', '--pointer_mode', default=None,
                         help='The mode for pointer network, either [none, first_dist]')
+    parser.add_argument('-a_mode', '--abbr_mode', default='sense',
+                        help='The mode for feed abbr [abbr, sense]')
     parser.add_argument('-neg_cnt', '--negative_sampling_count', default=0, type=int,
                         help='The number of negative sampling for abbr?')
 
@@ -118,6 +120,7 @@ class DummyConfig():
     max_context_len = args.max_context_len
     max_def_len = args.max_def_len
     predict_mode = args.predict_mode
+    abbr_mode = args.abbr_mode
     # TODO(sanqiang): add neg sampling when new data comes
     negative_sampling_count = args.negative_sampling_count
     aggregate_mode = args.aggregate_mode

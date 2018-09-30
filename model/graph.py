@@ -168,6 +168,12 @@ class Graph(BaseGraph):
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
 
+                # Abbr embedding
+                if self.model_config.abbr_mode == 'abbr':
+                    self.abbr_embs = tf.get_variable(
+                        'abbr_embs', [len(self.data.id2abbr), self.model_config.dimension], tf.float32,
+                        initializer=tf.contrib.layers.xavier_initializer())
+
                 # Semantic type embedding
                 if 'stype' in self.model_config.extra_loss:
                     self.stype_embs = tf.get_variable(
@@ -224,6 +230,10 @@ class Graph(BaseGraph):
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
 
+            # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
+            # The mask is 2 dimension vector with size [batch_size, sense_size]
+            mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
+
             if self.model_config.hub_module_embedding:
                 text_input = tf.zeros([self.model_config.batch_size], tf.string, name='text_input')
 
@@ -248,7 +258,17 @@ class Graph(BaseGraph):
                 sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
                                              initializer=tf.contrib.layers.xavier_initializer())
 
-            abbr_inp_emb = self.embedding_fn(abbr_inp, self.embs)
+            if self.model_config.abbr_mode == 'abbr':
+                abbr_inp_emb = self.embedding_fn(abbr_inp, self.abbr_embs)
+            elif self.model_config.abbr_mode == 'sense':
+                sense_weight = tf.get_variable('sense_weight',
+                                               [1, 1, self.data.sen_cnt], tf.float32,
+                                               initializer=tf.contrib.layers.xavier_initializer())
+                mask_exp = tf.expand_dims(mask, 1)
+                abbr_inp_emb = tf.reduce_mean(tf.expand_dims(sense_embs, 0) * mask_exp * sense_weight, axis=-1)
+            else:
+                raise ValueError('Unsupported abbr mode.')
+
             abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
             contexts_emb = tf.stack(context_encoder.embed_context(contexts, abbr_inp_emb), axis=1)
 
@@ -260,10 +280,6 @@ class Graph(BaseGraph):
                 # Append embedding from hub text model
                 embed_hub_state = self.embed_hub_module(text_input)
                 aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
-
-            # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
-            # The mask is 2 dimension vector with size [batch_size, sense_size]
-            mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
             if self.model_config.predict_mode == 'clas':
                 # Instead mask logit, mask proj_w and proj_b for efficiency
