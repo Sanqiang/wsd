@@ -9,7 +9,7 @@ from util.data.text_encoder import SubwordTextEncoder
 from util.data import text_encoder
 
 
-PATH_PROCESSED_FODER = '/home/zhaos5/projs/wsd/wsd_data/mimic/find_longform_mimic_processed/'
+PATH_PROCESSED_FODER = '/home/luoz3/data/mimic/processed/'
 PATH_TRAIN = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
 PATH_EVAL = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 PATH_VOCAB = '/home/zhaos5/projs/wsd/wsd_data/mimic/vocab'

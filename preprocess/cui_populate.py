@@ -1,4 +1,4 @@
-"""Get Extra information for each CUI. (e.g. definitaion, stype)
+"""Get Extra information for each CUI. (e.g. definition, stype)
    Generate pickle which is a map from cui to (definition, semantic type)
 """
 import json
