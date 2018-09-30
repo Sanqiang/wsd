@@ -84,7 +84,7 @@ class TextTokenFilter(object):
         # Remove digit to constant.NUM
         if self.remove_digit:
             tokens = [w if not re.fullmatch(r'\d+(\D\d+)?', w) else constant.NUM for w in tokens]
-        
+
         # Remove non-asc2 word
         if self.remove_non_ascii:
             tokens = [w for w in tokens if TokenHelper.is_ascii(w)]
@@ -354,4 +354,10 @@ def white_space_remover(txt):
     txt = re.sub(r"\n", " ", txt)
     # remove all redundant spaces
     txt = re.sub(r"\s{2,}", " ", txt)
+    return txt
+
+
+def special_repeat_remover(txt):
+    txt = re.sub(r'_{2,}', "_", txt)
+    txt = re.sub(r'\?{2,}', "?", txt)
     return txt
