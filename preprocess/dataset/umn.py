@@ -7,7 +7,7 @@ import os
 import re
 import tqdm
 from collections import defaultdict
-from preprocess.text_helper import TextPreProcessor, CoreNLPTokenizer
+from preprocess.text_helper import TextProcessor, CoreNLPTokenizer
 from preprocess.file_helper import txt_reader, txt_writer, json_writer
 
 
@@ -162,21 +162,19 @@ def map_longform2cui(lf2cui_dict, long_form_set):
     return lf2cui, lf2cui_valid
 
 
-def add_annotation_umn(sense_inventory, txt_list, splitter='\u2223'):
+def add_annotation_umn(sense_inventory, txt_list):
     print("Processing annotations...")
 
     docs_procs = []
     for items, doc in zip(dataset_file, txt_list):
         abbr = items[0]
         sense = items[1]
-        # <todo> use CUI to replace long form
+        # <todo> zhimeng: use CUI to replace long form
         start = int(items[2])
 
         doc_processed = "".join([
             doc[:start],
-            abbr,
-            splitter,
-            sense,
+            "abbr|%s|%s" % (abbr, sense),
             doc[start+len(abbr):]
         ])
         docs_procs.append(doc_processed)

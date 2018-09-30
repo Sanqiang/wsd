@@ -2,7 +2,7 @@
 Helper functions for pre-processing DataSet.
 -- Simple Tokenizer
 -- Stanford CoreNLP Tokenizer
--- Pre-processing Pipeline
+-- TextProcessor for simple multiprocessing
 -- Other general helper functions
 """
 
@@ -41,7 +41,7 @@ class TextHelper(object):
         tokens = self.rui_tokenize(
             text, lowercase=lowercase)
 
-        # Remove digit to constant.SYMBOL_NUM
+        # Remove digit to constant.NUM
         if remove_digit:
             tokens = [w if not re.match('^\d+$', w) else constant.NUM for w in tokens]
 
@@ -55,6 +55,49 @@ class TextHelper(object):
                 ntokens.append(token)
 
         return ntokens
+
+
+class TextTokenFilter(object):
+    """Must be used after tokenizer (tokens in txt can be split by space).
+
+    Implement same functions (except tokenizer) in TextHelper from sanqiang.
+    -- lowercase
+    -- remove non-ASCII
+    -- replace digits to constant.NUM
+    -- remove repeat non-words (only keep one)
+    """
+
+    def __init__(self, lowercase=True, remove_non_ascii=True, remove_digit=True, remove_repeat=True):
+        self.lowercase = lowercase
+        self.remove_non_ascii = remove_non_ascii
+        self.remove_digit = remove_digit
+        self.remove_repeat = remove_repeat
+
+    def __call__(self, txt):
+        # To lowercase
+        if self.lowercase:
+            txt = txt.lower()
+
+        # Split to tokens
+        tokens = txt.split(" ")
+
+        # Remove digit to constant.NUM
+        if self.remove_digit:
+            tokens = [w if not re.fullmatch(r'\d+(\D\d+)?', w) else constant.NUM for w in tokens]
+        
+        # Remove non-asc2 word
+        if self.remove_non_ascii:
+            tokens = [w for w in tokens if TokenHelper.is_ascii(w)]
+
+        # Remove repeatly non-words, e.g. num num into num
+        if self.remove_repeat:
+            ntokens = []
+            for token_id, token in enumerate(tokens):
+                if token.isalpha() or token_id == 0 or tokens[token_id-1] != token:
+                    ntokens.append(token)
+            return " ".join(ntokens)
+        else:
+            return " ".join(tokens)
 
 
 class TextBaseHelper(object):
@@ -71,19 +114,19 @@ class TextBaseHelper(object):
         raise NotImplementedError
 
 
-class TextPreProcessor(TextBaseHelper):
+class TextProcessor(TextBaseHelper):
     """
-    General pipeline for text pre-processing (before tokenizer).
-    -- Initialize pre-processing functions
+    General pipeline for text processing (except tokenizer).
+    -- Initialize processing functions
     -- Use for single text
     -- Use for list of texts
     """
 
     def __init__(self, process_function_list=None):
         """
-        Initialize pre-processing functions.
+        Initialize processing functions.
         For example:
-            -- annotation adder function ("AMI" to "AMI|C0340293")
+            -- annotation adder function ("AMI" to "abbr|AMI|C0340293")
             -- pattern remover functions
             -- DeID replacer function
 
@@ -98,7 +141,7 @@ class TextPreProcessor(TextBaseHelper):
         return txt
 
     def process_texts(self, txt_list, n_jobs=8):
-        print("Pre-processing texts (n_jobs = %d)..." % n_jobs)
+        print("Processing texts (n_jobs = %d)..." % n_jobs)
         txt_list_processed = Parallel(n_jobs=n_jobs, verbose=1)(delayed(self.process_single_text)(txt) for txt in txt_list)
         return txt_list_processed
 
@@ -110,7 +153,7 @@ class CoreNLPTokenizer(TextBaseHelper):
     -- Use for list of texts: process_texts
     """
 
-    def __init__(self, server_port=9000, combine_splitter="\u21F6", annotate_splitter="\u2223"):
+    def __init__(self, server_port=9000, combine_splitter="\u21F6"):
         """
         Initialize Stanford CoreNLP server.
 
@@ -119,11 +162,9 @@ class CoreNLPTokenizer(TextBaseHelper):
 
         :param server_port: The port of CoreNLP Java Server
         :param combine_splitter: A marker string to split multiple texts
-        :param annotate_splitter: A marker string to split abbr and CUI
         """
         self.stanford_nlp = StanfordCoreNLP('http://localhost:%d' % server_port)
         self.combine_splitter = combine_splitter
-        self.annotate_splitter = annotate_splitter
 
     def process_single_text(self, txt):
         tokens = self.stanford_nlp.annotate(txt, properties={
@@ -181,7 +222,6 @@ class CoreNLPTokenizer(TextBaseHelper):
         :param max_length: Maximum length of a combined text
         :return: List of combined texts
         """
-        # print("Combining multiple texts...")
         multi_texts = []
         len_count = 0
         texts_combined = []
@@ -206,7 +246,6 @@ class CoreNLPTokenizer(TextBaseHelper):
         :return: List of splitted texts
         """
         # decode to one doc per line
-        # print("Splitting combined texts...")
         texts_split_list = []
         for multi_doc in multi_texts_sorted:
             texts_split_list.extend(multi_doc[1].split(self.combine_splitter))
@@ -246,41 +285,44 @@ class CoreNLPTokenizer(TextBaseHelper):
         :return:
         """
         txt = txt.replace(" %s " % self.combine_splitter, self.combine_splitter)
-        txt = txt.replace(" %s " % self.annotate_splitter, self.annotate_splitter)
-        return txt
 
-    def split_sentence_end(self):
-        pass
+        # abbr annotation pattern (senses must be represented by CUI or digits)
+        annotate_ptn = re.compile(r"abbr \| (\w+?) \| (C?\d+)")
+
+        txt = re.sub(annotate_ptn, r"abbr|\1|\2", txt)
+        return txt
 
 
 class AbbrInventoryBuilder(TextBaseHelper):
     """
     Build Abbreviation Sense Inventory from processed texts.
     """
-
+    # <todo> Zhimeng: Build abbr sense inventory from processed texts for all datasets.
     def __init__(self):
-        pass
+        raise NotImplementedError
 
     def process_single_text(self, txt):
-        pass
+        raise NotImplementedError
 
     def process_texts(self, txt_list, n_jobs=1):
-        pass
+        raise NotImplementedError
 
 
 class AbbrInventory:
+    # <todo> Zhimeng: General Abbr sense inventory for all datasets.
 
     def __init__(self):
         self.data = {}
+        raise NotImplementedError
 
     def overlap(self):
-        pass
+        raise NotImplementedError
 
     def load(self):
-        pass
+        raise NotImplementedError
 
     def save(self):
-        pass
+        raise NotImplementedError
 
 
 ############################

@@ -8,7 +8,7 @@ import re
 import tqdm
 # please "pip install liac-arff" to read arff files
 import arff
-from preprocess.text_helper import TextPreProcessor, CoreNLPTokenizer
+from preprocess.text_helper import CoreNLPTokenizer
 from preprocess.file_helper import txt_reader, txt_writer, json_writer
 
 
@@ -28,7 +28,7 @@ def sense_inventory_msh(benchmark_mesh_file_path):
     return sense_inventory_one_word, sense_inventory
 
 
-def add_annotation_msh(sense_inventory, arff_folder_path, splitter='\u2223'):
+def add_annotation_msh(sense_inventory, arff_folder_path):
     print("Processing annotations...")
     docs_procs = []
     for abbr, cuis in tqdm.tqdm(sense_inventory.items()):
@@ -36,7 +36,7 @@ def add_annotation_msh(sense_inventory, arff_folder_path, splitter='\u2223'):
         for doc in documents["data"]:
             text = doc[1]
             sense_id = int(doc[2].lstrip("M")) - 1
-            txt_processed = re.sub(r"<e>.+?</e>", "%s%s%s" % (abbr, splitter, cuis[sense_id]), text)
+            txt_processed = re.sub(r"<e>.+?</e>", "abbr|%s|%s" % (abbr, cuis[sense_id]), text)
             # txt_processed = text.replace("<e>%s</e>" % abbr, "%s%s%s" % (abbr, splitter, cuis[sense_id]))
             docs_procs.append(txt_processed)
     return docs_procs

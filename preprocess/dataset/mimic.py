@@ -6,9 +6,10 @@ import os
 import re
 import json
 import tqdm
-from joblib import Parallel, delayed
+import operator
+import multiprocessing as mp
 from preprocess.text_helper import sub_patterns, white_space_remover
-from preprocess.text_helper import TextPreProcessor, CoreNLPTokenizer, TextBaseHelper
+from preprocess.text_helper import TextProcessor, CoreNLPTokenizer, TextTokenFilter
 from preprocess.file_helper import txt_reader, txt_writer, json_writer, pickle_reader
 
 
@@ -19,50 +20,50 @@ def sub_deid_patterns_mimic(txt):
         # normal date
         r"\[\*\*(\d{4}-)?\d{1,2}-\d{1,2}\*\*\]",
         # date range
-        r"\[\*\*Date [rR]ange.+\*\*\]",
+        r"\[\*\*Date [rR]ange.+?\*\*\]",
         # month/year
         r"\[\*\*-?\d{1,2}-?/\d{4}\*\*\]",
         # year
-        r"\[\*\*(Year \([24] digits\).+)\*\*\]",
+        r"\[\*\*(Year \([24] digits\).+?)\*\*\]",
         # holiday
-        r"\[\*\*Holiday.+\*\*\]",
+        r"\[\*\*Holiday.+?\*\*\]",
         # XXX-XX-XX
         r"\[\*\*\d{3}-\d{1,2}-\d{1,2}\*\*\]",
         # date with format
-        r"\[\*\*(Month(/Day)?(/Year)?|Year(/Month)?(/Day)?|Day Month).+\*\*\]",
+        r"\[\*\*(Month(/Day)?(/Year)?|Year(/Month)?(/Day)?|Day Month).+?\*\*\]",
         # uppercase month year
-        r"\[\*\*(January|February|March|April|May|June|July|August|September|October|November|December).+\*\*\]",
+        r"\[\*\*(January|February|March|April|May|June|July|August|September|October|November|December).+?\*\*\]",
     ], "DATE-DEID")
 
     # NAME
     txt = sub_patterns(txt, [
         # name
-        r"\[\*\*(First |Last )?Name.+\*\*\]",
+        r"\[\*\*(First |Last )?Name.+?\*\*\]",
         # name initials
-        r"\[\*\*Initial.+\*\*\]",
+        r"\[\*\*Initial.+?\*\*\]",
         # name with sex
-        r"\[\*\*(Female|Male).+\*\*\]",
+        r"\[\*\*(Female|Male).+?\*\*\]",
         # doctor name
-        r"\[\*\*Doctor.+\*\*\]",
+        r"\[\*\*Doctor.+?\*\*\]",
         # known name
-        r"\[\*\*Known.+\*\*\]",
+        r"\[\*\*Known.+?\*\*\]",
         # wardname
-        r"\[\*\*Wardname.+\*\*\]",
+        r"\[\*\*Wardname.+?\*\*\]",
     ], "NAME-DEID")
 
     # INSTITUTION
     txt = sub_patterns(txt, [
         # hospital
-        r"\[\*\*Hospital.+\*\*\]",
+        r"\[\*\*Hospital.+?\*\*\]",
         # university
-        r"\[\*\*University.+\*\*\]",
+        r"\[\*\*University.+?\*\*\]",
         # company
-        r"\[\*\*Company.+\*\*\]",
+        r"\[\*\*Company.+?\*\*\]",
     ], "INSTITUTION-DEID")
 
     # clip number
     txt = sub_patterns(txt, [
-        r"\[\*\*Clip Number.+\*\*\]",
+        r"\[\*\*Clip Number.+?\*\*\]",
     ], "CLIP-NUMBER-DEID")
 
     # digits
@@ -72,7 +73,7 @@ def sub_deid_patterns_mimic(txt):
 
     # tel/fax
     txt = sub_patterns(txt, [
-        r"\[\*\*Telephone/Fax.+\*\*\]",
+        r"\[\*\*Telephone/Fax.+?\*\*\]",
         r"\[\*\*\*\*\]",
     ], "PHONE-DEID")
 
@@ -83,60 +84,60 @@ def sub_deid_patterns_mimic(txt):
 
     # numeric identifier
     txt = sub_patterns(txt, [
-        r"\[\*\*Numeric Identifier.+\*\*\]",
+        r"\[\*\*Numeric Identifier.+?\*\*\]",
     ], "NUMERIC-DEID")
 
     # AGE
     txt = sub_patterns(txt, [
-        r"\[\*\*Age.+\*\*\]",
+        r"\[\*\*Age.+?\*\*\]",
     ], "AGE-DEID")
 
     # PLACE
     txt = sub_patterns(txt, [
         # country
-        r"\[\*\*Country.+\*\*\]",
+        r"\[\*\*Country.+?\*\*\]",
         # state
-        r"\[\*\*State.+\*\*\]",
+        r"\[\*\*State.+?\*\*\]",
     ], "PLACE-DEID")
 
     # STREET-ADDRESS
     txt = sub_patterns(txt, [
-        r"\[\*\*Location.+\*\*\]",
-        r"\[\*\*.+ Address.+\*\*\]",
+        r"\[\*\*Location.+?\*\*\]",
+        r"\[\*\*.+? Address.+?\*\*\]",
     ], "STREET-ADDRESS-DEID")
 
     # MD number
     txt = sub_patterns(txt, [
-        r"\[\*\*MD Number.+\*\*\]",
+        r"\[\*\*MD Number.+?\*\*\]",
     ], "MD-NUMBER-DEID")
 
     # other numbers
     txt = sub_patterns(txt, [
         # job
-        r"\[\*\*Job Number.+\*\*\]",
+        r"\[\*\*Job Number.+?\*\*\]",
         # medical record number
-        r"\[\*\*Medical Record Number.+\*\*\]",
+        r"\[\*\*Medical Record Number.+?\*\*\]",
         # SSN
-        r"\[\*\*Social Security Number.+\*\*\]",
+        r"\[\*\*Social Security Number.+?\*\*\]",
         # unit number
-        r"\[\*\*Unit Number.+\*\*\]",
+        r"\[\*\*Unit Number.+?\*\*\]",
         # pager number
-        r"\[\*\*Pager number.+\*\*\]",
+        r"\[\*\*Pager number.+?\*\*\]",
         # serial number
-        r"\[\*\*Serial Number.+\*\*\]",
+        r"\[\*\*Serial Number.+?\*\*\]",
         # provider number
-        r"\[\*\*Provider Number.+\*\*\]",
+        r"\[\*\*Provider Number.+?\*\*\]",
     ], "OTHER-NUMBER-DEID")
 
     # info
     txt = sub_patterns(txt, [
-        r"\[\*\*.+Info.+\*\*\]",
+        r"\[\*\*.+?Info.+?\*\*\]",
     ], "INFO-DEID")
 
     # E-mail
     txt = sub_patterns(txt, [
-        r"\[\*\*E-mail address.+\*\*\]",
-        r"\[\*\*URL.+\*\*\]"
+        r"\[\*\*E-mail address.+?\*\*\]",
+        r"\[\*\*URL.+?\*\*\]"
     ], "EMAIL-DEID")
 
     # other
@@ -146,23 +147,54 @@ def sub_deid_patterns_mimic(txt):
     return txt
 
 
-def longform_replacer_job(txt, senses, rmapper, splitter):
-    for sense in senses:
-        longform = sense.lower()
-        if longform in rmapper:
-            txt = re.sub(
-                r'\b' + longform + r'\b',
-                '%s%s%s' % (rmapper[longform][0], splitter, rmapper[longform][1]),
-                txt)
-    return txt
+def longform_replacer_job(idxs, txt_list, sense_list, txt_queue, rmapper):
+    for idx, txt, senses in zip(idxs, txt_list, sense_list):
+        for sense in senses:
+            longform = sense.lower()
+            if longform in rmapper:
+                txt = re.sub(
+                    r'\b' + longform + r'\b',
+                    'abbr|%s|%s' % (rmapper[longform][0], rmapper[longform][1]),
+                    txt)
+        txt_queue.put((idx, txt))
 
 
-def longform_replacer(txt_list, present_senses_list, rmapper, n_jobs=8, splitter="\u2223"):
+def longform_replacer(txt_list, present_senses_list, rmapper, n_jobs=8):
+    print("Replacing long forms...")
+
     txt_list_processed = []
-    for txt, present_senses in zip(txt_list, tqdm.tqdm(present_senses_list)):
-        txt_list_processed.append(longform_replacer_job(txt, present_senses, rmapper, splitter))
-    # txt_list_processed = Parallel(n_jobs=n_jobs, verbose=10)(delayed(longform_replacer_job)(txt, present_senses, rmapper, splitter) for txt, present_senses in zip(txt_list, present_senses_list))
-    return txt_list_processed
+    q = mp.Queue()
+    # how many docs per worker
+    step = len(txt_list) // n_jobs
+    # assign workers
+    workers = [mp.Process(target=longform_replacer_job,
+                          args=(
+                              range(i * step, (i + 1) * step),
+                              txt_list[i * step:(i + 1) * step],
+                              present_senses_list[i * step:(i + 1) * step],
+                              q,
+                              rmapper,
+                          )) for i in range(n_jobs - 1)]
+    workers.append(mp.Process(target=longform_replacer_job,
+                              args=(
+                                  range((n_jobs - 1) * step, len(txt_list)),
+                                  txt_list[(n_jobs - 1) * step:],
+                                  present_senses_list[(n_jobs - 1) * step:],
+                                  q,
+                                  rmapper,
+                              )))
+    # start working
+    with tqdm.tqdm(total=len(txt_list)) as pbar:
+        for i in range(n_jobs):
+            workers[i].start()
+        for i in range(len(txt_list)):
+            txt_list_processed.append(q.get())
+            pbar.update()
+        for i in range(n_jobs):
+            workers[i].join()
+
+    txt_list_processed_sorted = sorted(txt_list_processed, key=operator.itemgetter(0))
+    return [txt for _, txt in txt_list_processed_sorted]
 
 
 if __name__ == '__main__':
@@ -184,42 +216,37 @@ if __name__ == '__main__':
     ######################################
 
     # Initialize processor and tokenizer
-    processor = TextPreProcessor([
+    processor = TextProcessor([
         white_space_remover,
         sub_deid_patterns_mimic])
 
     toknizer = CoreNLPTokenizer()
 
-    # for i in range(42):
+    token_filter = TextTokenFilter()
+    filter_processor = TextProcessor([token_filter])
 
-    # read file
-    filename = 'processed_text_chunk_%s.json' % 1
-    print("-"*50)
-    print("Start File for %s" % filename)
-    mimic_txt = []
-    mimic_present_senses = []
-    for line in open(PATH_FOLDER+filename, "r"):
-        obj = json.loads(line)
-        text = obj['TEXT']
-        present_senses = obj['present_senses']
-        mimic_txt.append(text)
-        mimic_present_senses.append(present_senses)
+    for i in range(42):
 
-    # print(mimic_txt[0])
-    txt = mimic_txt[0]
-    print(txt)
-    print('#'*50)
-    print('#' * 50)
-    txt = white_space_remover(txt)
-    # txt = processor.process_single_text(txt)
-    print(txt)
-    # txt = toknizer.process_single_text(txt)
+        # read file
+        filename = 'processed_text_chunk_%s.json' % i
+        print("-"*50)
+        print("Start File for %s" % filename)
+        mimic_txt = []
+        mimic_present_senses = []
+        for line in open(PATH_FOLDER+filename, "r"):
+            obj = json.loads(line)
+            text = obj['TEXT']
+            present_senses = obj['present_senses']
+            mimic_txt.append(text)
+            mimic_present_senses.append(present_senses)
 
-        # # pre-processing
-        # mimic_txt = processor.process_texts(mimic_txt, n_jobs=30)
-        # # tokenizing
-        # mimic_txt_tokenized = toknizer.process_texts(mimic_txt, n_jobs=40)
-        # # Replace Long forms to abbrs
-        # mimic_txt_processed = longform_replacer(mimic_txt_tokenized, mimic_present_senses, inventory_rmapper, n_jobs=1)
-        # # Save to file
-        # txt_writer(mimic_txt_processed, PATH_FOLDER_PROCESSED+'%s.txt' % filename[:-5])
+        # pre-processing
+        mimic_txt = processor.process_texts(mimic_txt, n_jobs=30)
+        # tokenizing
+        mimic_txt_tokenized = toknizer.process_texts(mimic_txt, n_jobs=40)
+        # Filter trivial tokens
+        mimic_txt_filtered = filter_processor.process_texts(mimic_txt_tokenized, n_jobs=40)
+        # Replace Long forms to abbrs
+        mimic_txt_processed = longform_replacer(mimic_txt_filtered, mimic_present_senses, inventory_rmapper, n_jobs=16)
+        # Save to file
+        txt_writer(mimic_txt_processed, PATH_FOLDER_PROCESSED+'%s.txt' % filename[:-5])
