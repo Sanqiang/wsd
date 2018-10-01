@@ -229,10 +229,9 @@ if __name__ == '__main__':
 
     token_filter = TextTokenFilter()
     filter_processor = TextProcessor([
-        repeat_non_word_remover,
         token_filter])
 
-    split_cui_processor = TextProcessor([split_non_valid_cui])
+    remove_repeat_processor = TextProcessor([repeat_non_word_remover])
 
     for i in range(42):
 
@@ -257,7 +256,7 @@ if __name__ == '__main__':
         mimic_txt_filtered = filter_processor.process_texts(mimic_txt_tokenized, n_jobs=40)
         # Replace Long forms to abbrs
         mimic_txt_processed = longform_replacer(mimic_txt_filtered, mimic_present_senses, inventory_rmapper, n_jobs=16)
-        # # Split non-valid CUIs
-        # mimic_txt_processed = split_cui_processor.process_texts(mimic_txt_processed, n_jobs=40)
+        # Remove repeat non-words
+        mimic_txt_processed = remove_repeat_processor.process_texts(mimic_txt_processed, n_jobs=40)
         # Save to file
         txt_writer(mimic_txt_processed, PATH_FOLDER_PROCESSED+'%s.txt' % filename[:-5])
