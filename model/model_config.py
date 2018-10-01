@@ -48,7 +48,7 @@ def get_args():
                         help='Number of samples used in Softmax?')
     parser.add_argument('-ag_mode', '--aggregate_mode', default='selfattn',
                         help='The mode transform the encoder output to single hidden state')
-    parser.add_argument('-pred_mode', '--predict_mode', default='clas',
+    parser.add_argument('-pred_mode', '--predict_mode', default='match',
                         help='The mode for prediction, either [clas, match, match_simple]')
     parser.add_argument('-ptr_mode', '--pointer_mode', default=None,
                         help='The mode for pointer network, either [none, first_dist]')
