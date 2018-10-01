@@ -8,7 +8,7 @@ import json
 import tqdm
 import operator
 import multiprocessing as mp
-from preprocess.text_helper import sub_patterns, white_space_remover, special_repeat_remover
+from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover
 from preprocess.text_helper import TextProcessor, CoreNLPTokenizer, TextTokenFilter
 from preprocess.file_helper import txt_reader, txt_writer, json_writer, pickle_reader
 
@@ -159,7 +159,7 @@ def longform_replacer_job(idxs, txt_list, sense_list, txt_queue, rmapper):
             if longform in rmapper:
                 txt = re.sub(
                     r'\b' + longform + r'\b',
-                    'abbr|%s|%s' % (rmapper[longform][0], rmapper[longform][1]),
+                    'abbr|%s|%s ' % (rmapper[longform][0], rmapper[longform][1]),
                     txt)
         txt_queue.put((idx, txt))
 
@@ -223,13 +223,13 @@ if __name__ == '__main__':
     # Initialize processor and tokenizer
     processor = TextProcessor([
         white_space_remover,
-        special_repeat_remover,
         sub_deid_patterns_mimic])
 
     toknizer = CoreNLPTokenizer()
 
     token_filter = TextTokenFilter()
     filter_processor = TextProcessor([
+        repeat_non_word_remover,
         token_filter])
 
     split_cui_processor = TextProcessor([split_non_valid_cui])
@@ -257,7 +257,7 @@ if __name__ == '__main__':
         mimic_txt_filtered = filter_processor.process_texts(mimic_txt_tokenized, n_jobs=40)
         # Replace Long forms to abbrs
         mimic_txt_processed = longform_replacer(mimic_txt_filtered, mimic_present_senses, inventory_rmapper, n_jobs=16)
-        # Split non-valid CUIs
-        mimic_txt_processed = split_cui_processor.process_texts(mimic_txt_processed, n_jobs=40)
+        # # Split non-valid CUIs
+        # mimic_txt_processed = split_cui_processor.process_texts(mimic_txt_processed, n_jobs=40)
         # Save to file
         txt_writer(mimic_txt_processed, PATH_FOLDER_PROCESSED+'%s.txt' % filename[:-5])

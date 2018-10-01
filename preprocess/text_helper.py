@@ -357,7 +357,6 @@ def white_space_remover(txt):
     return txt
 
 
-def special_repeat_remover(txt):
-    txt = re.sub(r'_{2,}', "_", txt)
-    txt = re.sub(r'\?{2,}', "?", txt)
+def repeat_non_word_remover(txt):
+    txt = re.sub(r'([\W_])\1+', r'\1', txt)
     return txt
