@@ -7,6 +7,7 @@ import os
 import re
 import tqdm
 from collections import defaultdict
+from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover
 from preprocess.text_helper import TextProcessor, CoreNLPTokenizer
 from preprocess.file_helper import txt_reader, txt_writer, json_writer
 
@@ -174,7 +175,7 @@ def add_annotation_umn(sense_inventory, txt_list):
 
         doc_processed = "".join([
             doc[:start],
-            "abbr|%s|%s" % (abbr, sense),
+            " abbr|%s|%s" % (abbr, sense),
             doc[start+len(abbr):]
         ])
         docs_procs.append(doc_processed)

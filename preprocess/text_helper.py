@@ -287,7 +287,7 @@ class CoreNLPTokenizer(TextBaseHelper):
         txt = txt.replace(" %s " % self.combine_splitter, self.combine_splitter)
 
         # abbr annotation pattern (senses must be represented by CUI or digits)
-        annotate_ptn = re.compile(r"abbr \| (\w+?) \| (C?\d+)")
+        annotate_ptn = re.compile(r"abbr \| ([\w\-/'.]+?) \| (C?\d+)")
 
         txt = re.sub(annotate_ptn, r"abbr|\1|\2", txt)
         return txt
@@ -359,4 +359,17 @@ def white_space_remover(txt):
 
 def repeat_non_word_remover(txt):
     txt = re.sub(r'([\W_])\1+', r'\1', txt)
+    return txt
+
+
+def recover_upper_cui(txt):
+    """
+    Recover all lowercase CUI to uppercase.
+
+    :param txt:
+    :return:
+    """
+    # abbr annotation pattern (senses must be represented by CUI or digits)
+    annotate_ptn = re.compile(r"(abbr\|[\w\-/'.]+?\|)c(\d+)")
+    txt = re.sub(annotate_ptn, r"\1C\2", txt)
     return txt

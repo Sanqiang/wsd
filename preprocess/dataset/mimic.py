@@ -159,7 +159,7 @@ def longform_replacer_job(idxs, txt_list, sense_list, txt_queue, rmapper):
             if longform in rmapper:
                 txt = re.sub(
                     r'\b' + longform + r'\b',
-                    'abbr|%s|%s ' % (rmapper[longform][0], rmapper[longform][1]),
+                    ' abbr|%s|%s ' % (rmapper[longform][0], rmapper[longform][1]),
                     txt)
         txt_queue.put((idx, txt))
 
