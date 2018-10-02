@@ -317,7 +317,7 @@ class Graph(BaseGraph):
 
         with tf.variable_scope('extra'):
             if self.is_train:
-                self.def_loss = 0.0
+                self.def_loss = tf.constant(0.0)
                 if 'def' in self.model_config.extra_loss:
                     aggregate_state_def = tf.contrib.layers.fully_connected(
                         aggregate_state, self.model_config.dimension)
@@ -334,7 +334,7 @@ class Graph(BaseGraph):
                     self.def_loss = tf.losses.absolute_difference(defs_output, aggregate_state_def)
                     loss += self.def_loss
 
-                self.style_loss = 0.0
+                self.style_loss = tf.constant(0.0)
                 if 'stype' in self.model_config.extra_loss:
                     aggregate_state_stype = tf.contrib.layers.fully_connected(
                         aggregate_state, self.model_config.dimension)

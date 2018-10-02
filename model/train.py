@@ -34,12 +34,13 @@ def get_feed(objs, data, model_config, is_train):
                     sample['target'] = [0, 0, 0, 0]
                     sample['line'] = ''
                     sample['def'] = [0] * model_config.max_def_len
-                    sample['stype'] = [0]
+                    sample['stype'] = 0
                     exclude_cnt += 1 # Assume eval use single GPU
 
             tmp_contexts.append(sample['contexts'])
             tmp_targets.append(sample['target'])
             tmp_lines.append(sample['line'])
+
             if 'def' in model_config.extra_loss:
                 tmp_extra_cui_def.append(sample['def'])
             if 'stype' in model_config.extra_loss:
