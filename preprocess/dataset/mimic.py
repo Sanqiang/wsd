@@ -159,7 +159,11 @@ def longform_replacer_job(idxs, txt_list, sense_list, txt_queue, rmapper):
             if longform in rmapper:
                 txt = re.sub(
                     r'\b' + longform + r'\b',
-                    ' abbr|%s|%s ' % (rmapper[longform][0], rmapper[longform][1]),
+                    ' abbr|%s|%s|%s ' % (
+                        rmapper[longform][0],
+                        rmapper[longform][1],
+                        '_'.join(longform.split())
+                    ),
                     txt)
         txt_queue.put((idx, txt))
 
@@ -207,10 +211,11 @@ if __name__ == '__main__':
     ######################################
     # Read texts from dataset
     ######################################
+    BASE_FOLDER = '/home/mengr/project/wsd/wsd_data/mimic/'
 
-    PATH_FOLDER = '/home/zhaos5/projs/wsd/wsd_data/mimic/find_longform_mimic/'
-    PATH_FOLDER_PROCESSED = '/home/luoz3/data/mimic/processed/'
-    PATH_PROCESSED_INVENTORY_PKL = '/home/zhaos5/projs/wsd/wsd_data/mimic/final_cleaned_sense_inventory.cased.processed.pkl'
+    PATH_FOLDER = BASE_FOLDER + 'find_longform_mimic/'
+    PATH_FOLDER_PROCESSED = BASE_FOLDER + 'find_longform_mimic_processed/'
+    PATH_PROCESSED_INVENTORY_PKL = BASE_FOLDER + 'final_cleaned_sense_inventory.cased.processed.pkl'
 
     # Get pickle generated from mimic_inventory.py
     inventory = pickle_reader(PATH_PROCESSED_INVENTORY_PKL)

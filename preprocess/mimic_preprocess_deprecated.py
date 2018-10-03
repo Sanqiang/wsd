@@ -19,7 +19,7 @@ def substitue_longform(filename):
     """
     Process the raw data to training data (subsite longform to CUI)
     "Consider prior anterior myocardial infarction, although it is non-diagnostic." will be
-    "Consider prior abbr|AMI|C0340293|[anterior_myocardial_infarction], although it is non-diagnostic."
+    "Consider prior abbr|AMI|C0340293|anterior_myocardial_infarction, although it is non-diagnostic."
     :param filename:
     :return:
     """
