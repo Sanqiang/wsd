@@ -5,7 +5,7 @@ from multiprocessing import Pool
 
 from preprocess.text_helper import TextHelper
 
-BASE_FOLDER = '/home/zhaos5/projs/wsd/wsd_data/mimic/'
+BASE_FOLDER = '/home/mengr/project/wsd/wsd_data/mimic/'
 PATH_FOLDER = BASE_FOLDER + 'find_longform_mimic/'
 PATH_PROCESSED_FOLDER = BASE_FOLDER + 'find_longform_mimic_processed/'
 
@@ -23,7 +23,7 @@ def substitue_longform(filename):
     :param filename:
     :return:
     """
-    print('Start File for %s' % filename)
+    print('Start File for %s' % (PATH_FOLDER + filename))
     text_helper = TextHelper()
     nlines = []
 
