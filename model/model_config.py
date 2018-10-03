@@ -21,7 +21,7 @@ def get_args():
 
     parser.add_argument('-op', '--optimizer', default='adagrad',
                         help='Which optimizer to use?')
-    parser.add_argument('-lr', '--learning_rate', default=0.1, type=float,
+    parser.add_argument('-lr', '--learning_rate', default=0.01, type=float,
                         help='Value of learning rate?')
     parser.add_argument('-layer_drop', '--layer_prepostprocess_dropout', default=0.0, type=float,
                         help='Dropout rate for data input?')
