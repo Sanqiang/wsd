@@ -8,7 +8,8 @@ import re
 import tqdm
 # please "pip install liac-arff" to read arff files
 import arff
-from preprocess.text_helper import CoreNLPTokenizer
+from preprocess.text_helper import white_space_remover, repeat_non_word_remover, recover_upper_cui
+from preprocess.text_helper import CoreNLPTokenizer, TextProcessor, TextTokenFilter
 from preprocess.file_helper import txt_reader, txt_writer, json_writer
 
 
@@ -18,7 +19,7 @@ def sense_inventory_msh(benchmark_mesh_file_path):
 
     sense_inventory = {}
     sense_inventory_one_word = {}
-    for line in tqdm.tqdm(inventory_file):
+    for line in inventory_file:
         items = line.split("\t")
         abbr = items[0]
         cuis = items[1:]
@@ -36,8 +37,7 @@ def add_annotation_msh(sense_inventory, arff_folder_path):
         for doc in documents["data"]:
             text = doc[1]
             sense_id = int(doc[2].lstrip("M")) - 1
-            txt_processed = re.sub(r"<e>.+?</e>", "abbr|%s|%s" % (abbr, cuis[sense_id]), text)
-            # txt_processed = text.replace("<e>%s</e>" % abbr, "%s%s%s" % (abbr, splitter, cuis[sense_id]))
+            txt_processed = re.sub(r"<e>.+?</e>", " abbr|%s|%s " % (abbr, cuis[sense_id]), text)
             docs_procs.append(txt_processed)
     return docs_procs
 
@@ -61,12 +61,21 @@ if __name__ == '__main__':
     #############################
     msh_txt_annotated = add_annotation_msh(MSH_sense_inventory_one_word, msh_path)
 
-    #######################################
-    # Tokenize
-    #######################################
+    # Initialize processor and tokenizer
+    processor = TextProcessor([
+        white_space_remover])
+    toknizer = CoreNLPTokenizer()
+    token_filter = TextTokenFilter()
+    filter_processor = TextProcessor([
+        token_filter,
+        repeat_non_word_remover,
+        recover_upper_cui])
 
-    tokenizer = CoreNLPTokenizer()
-    msh_txt_tokenized = tokenizer.process_texts(msh_txt_annotated, n_jobs=10)
-
+    # pre-processing
+    msh_txt = processor.process_texts(msh_txt_annotated, n_jobs=10)
+    # tokenizing
+    msh_txt_tokenized = toknizer.process_texts(msh_txt, n_jobs=10)
+    # Filter trivial tokens and Remove repeat non-words
+    msh_txt_filtered = filter_processor.process_texts(msh_txt_tokenized, n_jobs=10)
     # Write to file
-    txt_writer(msh_txt_tokenized, msh_processed_path+"/msh_processed.txt")
+    txt_writer(msh_txt_filtered, msh_processed_path+"/msh_processed.txt")
