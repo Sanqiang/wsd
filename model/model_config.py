@@ -38,7 +38,7 @@ def get_args():
                         help='Max of context length?')
     parser.add_argument('-vprocess', '--voc_process', default='',
                         help='Preprocess of vocab?')
-    parser.add_argument('-it', '--it_train', default=False, type=bool,
+    parser.add_argument('-it', '--it_train', default=True, type=bool,
                         help='Iteractive Processing Data?')
 
     # For Graph
@@ -90,7 +90,8 @@ def list_config(config):
 
 def get_path(file_path, env='sys'):
     if env == 'aws':
-        return '/home/zhaos5/projs/wsd/wsd_perf/tmp/' + file_path
+        # return '/home/zhaos5/projs/wsd/wsd_perf/tmp/' + file_path
+        return '../../wsd_perf/tmp/' + file_path
     else:
         return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
 

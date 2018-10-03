@@ -119,20 +119,23 @@ class Data:
         return objs
 
     def populate_data(self, path):
-        # if os.path.exists(self.model_config.train_pickle):
-        #     with open(self.model_config.train_pickle, 'rb') as inv_file:
-        #         self.datas = pickle.load(inv_file)
-        self.datas = []
-        line_id = 0
-        for line in open(path):
-            objs = self.process_line(line, line_id)
-            self.datas.extend(objs)
-            line_id += 1
-            if line_id % 10000 == 0:
-                print('Process %s lines.' % line_id)
-            # break
-        # with open(self.model_config.train_pickle, 'wb') as output_file:
-        #     pickle.dump(self.datas, output_file)
+        if os.path.exists(self.model_config.train_pickle):
+            with open(self.model_config.train_pickle, 'rb') as inv_file:
+                self.datas = pickle.load(inv_file)
+        else:
+            self.datas = []
+            line_id = 0
+            for line in open(path):
+                objs = self.process_line(line, line_id)
+                self.datas.extend(objs)
+                line_id += 1
+                if line_id % 10000 == 0:
+                    print('Process %s lines.' % line_id)
+                if line_id % 100000 == 0:
+                    print('break, only export 100000 exmaples')
+                    break
+            with open(self.model_config.train_pickle, 'wb') as output_file:
+                pickle.dump(self.datas, output_file)
 
 
 class TrainData(Data):
