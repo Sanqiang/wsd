@@ -14,6 +14,12 @@ class Data:
         # For Context
         self.voc = Vocab(model_config, model_config.voc_file)
 
+        if 'stype' in model_config.extra_loss:
+            self.populate_cui_stype()
+
+        if 'def' in model_config.extra_loss:
+            self.populate_cui_def()
+
     def populate_abbr(self):
         self.abbr2id, self.id2abbr = {}, []
         self.sense2id, self.id2sense = {}, []
@@ -25,36 +31,34 @@ class Data:
         self.sense2id = dict(zip(self.id2sense, range(len(self.id2sense))))
         self.sen_cnt = len(self.id2sense)
 
-    # Deprecated
-    def populate_abbr_deprecated(self):
-        def update(item, item2id, id2item):
-            if item not in item2id:
-                item2id[item] = len(id2item)
-                id2item.append(item)
+    def populate_cui_stype(self):
+        self.stype2id, self.id2stype = {}, []
+        self.id2stype = [stype.split('\t')[0]
+                         for stype in open(self.model_config.stype_voc_file).readlines()]
+        self.stype2id = dict(zip(self.id2stype, range(len(self.id2stype))))
 
-        s_i = 0
-        self.abbrs_pos = {}
-        self.abbr2id, self.id2abbr = {}, []
-        self.sense2id, self.id2sense = {}, []
-        for line in open(self.model_config.abbr_common_file):
-            items = line.strip().split('|')
-            abbr = items[0]
-            update(abbr, self.abbr2id, self.id2abbr)
-            senses = items[1].split()
+        self.cui2stype = {}
+        with open(self.model_config.cui_extra_pkl, 'rb') as cui_file:
+            cui_extra = pickle.load(cui_file)
+            for cui in cui_extra:
+                info = cui_extra[cui]
+                self.cui2stype[cui] = self.stype2id[info[1]]
 
-            abbr_id = self.abbr2id[abbr]
-            if abbr_id not in self.abbrs_pos:
-                self.abbrs_pos[abbr_id] = {}
-                self.abbrs_pos[abbr_id]['s_i'] = s_i
-                self.abbrs_pos[abbr_id]['e_i'] = s_i + len(senses)
-                s_i = s_i + len(senses)
-            for sense in senses:
-                update(abbr + '|' + sense, self.sense2id, self.id2sense)
-        self.sen_cnt = s_i
+    def populate_cui_def(self):
+        self.cui2def = {}
+        with open(self.model_config.cui_extra_pkl, 'rb') as cui_file:
+            cui_extra = pickle.load(cui_file)
+            for cui in cui_extra:
+                info = cui_extra[cui]
+                definition = self.voc.encode(info[0])
 
-        self.abbrs_filterout = set()
-        for line in open(self.model_config.abbr_rare_file):
-            self.abbrs_filterout.add(line.strip())
+                if len(definition) > self.model_config.max_def_len:
+                    definition = definition[:self.model_config.max_def_len]
+                else:
+                    num_pad = self.model_config.max_def_len - len(definition)
+                    definition.extend(self.voc.encode(PAD) * num_pad)
+                assert len(definition) == self.model_config.max_def_len
+                self.cui2def[cui] = definition
 
     def process_line(self, line, line_id):
         contexts = []
@@ -115,6 +119,14 @@ class Data:
                 'target': target,
                 'line': line,
             }
+
+            if self.model_config.extra_loss:
+                cui = self.id2sense[target[2]]
+                if 'def' in self.model_config.extra_loss:
+                    obj['def'] = self.cui2def[cui]
+                if 'stype' in self.model_config.extra_loss:
+                    obj['stype'] = self.cui2stype[cui]
+
             objs.append(obj)
         return objs
 
