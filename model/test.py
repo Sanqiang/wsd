@@ -16,10 +16,8 @@ from datetime import datetime
 from os.path import exists, join
 from os import makedirs, listdir, remove
 
-from model.model_config import get_args, DummyConfig, BaseConfig
-
-
-args = get_args()
+from model.model_config import get_args, BaseConfig
+import argparse
 
 
 def eval(model_config, ckpt):
@@ -111,9 +109,22 @@ def write_best_acc(model_config, acc):
     open(best_acc_file, 'w').write(str(acc))
 
 
+def get_ckpt(modeldir, logdir, wait_second=60):
+    while True:
+        try:
+            ckpt = copy_ckpt_to_modeldir(modeldir, logdir)
+            return ckpt
+        except FileNotFoundError as exp:
+            if wait_second:
+                print(str(exp) + '\nWait for 1 minutes.')
+                time.sleep(wait_second)
+            else:
+                return None
+
+
 class TestBaseConfig(BaseConfig):
 
-    def __init__(self, test_file):
+    def __init__(self, test_file=None):
         self.eval_file = test_file
 
     zhaos5_data_path = '/home/zhaos5/projs/wsd/wsd_data'
@@ -134,35 +145,16 @@ if __name__ == '__main__':
     msh_txt_path = data_path + 'msh/msh_processed/msh_processed.txt'
     share_txt_path = data_path + 'share/processed/share_all_processed.txt'
 
-    def get_ckpt(modeldir, logdir, wait_second=60):
-        while True:
-            try:
-                ckpt = copy_ckpt_to_modeldir(modeldir, logdir)
-                return ckpt
-            except FileNotFoundError as exp:
-                if wait_second:
-                    print(str(exp) + '\nWait for 1 minutes.')
-                    time.sleep(wait_second)
-                else:
-                    return None
+    args = get_args()
+    if args.test_dataset == 'share':
+        test_file = share_txt_path
+    elif args.test_dataset == 'msh':
+        test_file = msh_txt_path
+    else:
+        raise ValueError('Please type valid dataset name')
 
     # test file path
-    print("For share: ")
-    model_config = TestBaseConfig(share_txt_path)
-    ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-4829418'
+    model_config = TestBaseConfig(test_file)
+    ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
     acc = eval(model_config, ckpt)
     write_best_acc(model_config, acc)
-    # while True:
-    #     ckpt = get_ckpt(model_config.modeldir, model_config.logdir)
-    #     if ckpt:
-    #         acc = eval(model_config, ckpt)
-    #         if acc > best_acc:
-    #             best_acc = acc
-    #             write_best_acc(model_config, best_acc)
-    #             for file in listdir(model_config.modeldir):
-    #                 step = ckpt[ckpt.rindex('model.ckpt-') + len('model.ckpt-'):-1]
-    #                 if step not in file:
-    #                     remove(model_config.modeldir + file)
-    #         else:
-    #             for fl in glob.glob(ckpt + '*'):
-    #                 remove(fl)

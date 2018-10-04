@@ -83,6 +83,9 @@ def get_args():
     parser.add_argument('-max_def_len', '--max_def_len', default=100, type=int,
                         help='Max of def length?')
 
+    # Test DataSet
+    parser.add_argument('-testset', '--test_dataset', default='mimic',
+                        help='Test on which DataSet?')
 
     args = parser.parse_args()
     return args
@@ -102,7 +105,7 @@ def get_path(file_path, env='sys'):
     if env == 'aws':
         return '/home/zhaos5/projs/wsd/wsd_perf/tmp/' + file_path
     elif env == 'luoz3':
-        return '/home/luoz3/wsd_result/' + file_path
+        return '/home/luoz3/wsd_result/tmp/' + file_path
     else:
         return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
 
