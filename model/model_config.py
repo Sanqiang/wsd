@@ -21,7 +21,7 @@ def get_args():
 
     parser.add_argument('-op', '--optimizer', default='adagrad',
                         help='Which optimizer to use?')
-    parser.add_argument('-lr', '--learning_rate', default=0.1, type=float,
+    parser.add_argument('-lr', '--learning_rate', default=0.01, type=float,
                         help='Value of learning rate?')
     parser.add_argument('-layer_drop', '--layer_prepostprocess_dropout', default=0.0, type=float,
                         help='Dropout rate for data input?')
@@ -83,6 +83,9 @@ def get_args():
     parser.add_argument('-max_def_len', '--max_def_len', default=100, type=int,
                         help='Max of def length?')
 
+    # Test DataSet
+    parser.add_argument('-testset', '--test_dataset', default='mimic',
+                        help='Test on which DataSet?')
 
     args = parser.parse_args()
     return args
@@ -101,6 +104,8 @@ def list_config(config):
 def get_path(file_path, env='sys'):
     if env == 'aws':
         return '/home/zhaos5/projs/wsd/wsd_perf/tmp/' + file_path
+    elif env == 'luoz3':
+        return '/home/luoz3/wsd_result/tmp/' + file_path
     else:
         return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
 
@@ -108,7 +113,7 @@ def get_path(file_path, env='sys'):
 args = get_args()
 
 
-class DummyConfig():
+class DummyConfig:
     mode = args.mode
 
     train_file = get_path('../wsd_data/dummy/train.txt')
