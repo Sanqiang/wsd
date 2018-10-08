@@ -1,3 +1,4 @@
+# Deprecated
 import re
 import json
 import pickle
@@ -30,7 +31,7 @@ def substitue_longform(filename):
     for line in open(PATH_FOLDER + filename):
         obj = json.loads(line)
         text = obj['TEXT']
-        text = text_helper.process_context(text)
+        text = text_helper.process_coentext(text)
         text = ' '.join(text)
         present_senses = obj['present_senses']
         for present_sense in present_senses:
