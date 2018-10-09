@@ -155,6 +155,7 @@ if __name__ == '__main__':
 
     # test file path
     model_config = TestBaseConfig(test_file)
-    ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
+    # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
+    ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train/model/model.ckpt-20676678'
     acc = eval(model_config, ckpt)
     write_best_acc(model_config, acc)

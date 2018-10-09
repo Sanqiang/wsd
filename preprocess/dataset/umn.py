@@ -6,6 +6,7 @@ Helper functions for UMN dataset.
 import os
 import re
 import tqdm
+import json
 from collections import defaultdict
 from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover
 from preprocess.text_helper import TextProcessor, CoreNLPTokenizer
@@ -217,6 +218,20 @@ if __name__ == '__main__':
     for abbr, long_forms in UMN_sense_inventory.items():
         for item in long_forms:
             long_form_set.add(item)
+
+    _, lf2cui_only_have_cui = map_longform2cui(long_form2cui, long_form_set)
+
+    # umn sense inventory with CUI
+    UMN_sense_cui_inventory = defaultdict(dict)
+    for abbr, long_forms in UMN_sense_inventory.items():
+        for long_form in long_forms:
+            if long_form in lf2cui_only_have_cui:
+                UMN_sense_cui_inventory[abbr][long_form] = lf2cui_only_have_cui[long_form]
+            else:
+                UMN_sense_cui_inventory[abbr][long_form] = None
+    json_writer(UMN_sense_cui_inventory, umn_processed_path+"/UMN_sense_cui_inventory.json")
+
+    print()
 
     # #############################
     # # Process MSH documents (only one word abbrs)
