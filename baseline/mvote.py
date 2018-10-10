@@ -1,4 +1,5 @@
 """Simple majority vote impl"""
+import tqdm
 from collections import Counter, defaultdict
 from preprocess.file_helper import pickle_writer, pickle_reader
 
@@ -62,16 +63,16 @@ def build_inventory(train_collection):
     return inventory
 
 
-def compare_abbr_inventory(inventory1, inventory2):
+def compare_abbr_inventory(train_inventory, test_inventory):
     # collect CUIs
     cuis_1 = []
-    for _, cuis in inventory1.items():
+    for _, cuis in train_inventory.items():
         cuis_1.extend(cuis)
     cuis_1 = set(cuis_1)
     print("No.CUIs on train: ", len(cuis_1))
 
     cuis_2 = []
-    for _, cuis in inventory2.items():
+    for _, cuis in test_inventory.items():
         cuis_2.extend(cuis)
     cuis_2 = set(cuis_2)
     print("No.CUIs on test: ", len(cuis_2))
@@ -80,11 +81,26 @@ def compare_abbr_inventory(inventory1, inventory2):
     print("CUI overlap ratio: ", len(cuis_1 & cuis_2)/len(cuis_2))
 
     # collect abbr info
-    abbr_1 = set(inventory1.keys())
+    abbr_1 = set(train_inventory.keys())
     print("No. abbrs on train: ", len(abbr_1))
-    abbr_2 = set(inventory2.keys())
+    abbr_2 = set(test_inventory.keys())
     print("No. abbrs on test: ", len(abbr_2))
     print("Abbr overlap ratio: ", len(abbr_1 & abbr_2)/len(abbr_2))
+
+
+def compare_mapping_instances(train_inventory_counter, test_inventory_counter):
+    train_inventory = build_inventory(train_inventory_counter)
+    count_all_instances = 0
+    count_no_abbr_instances = 0
+    count_overlap_instances = 0
+    for abbr, items in tqdm.tqdm(test_inventory_counter.items()):
+        for cui, count in items.items():
+            count_all_instances += count
+            if abbr not in train_inventory:
+                count_no_abbr_instances += count
+            elif cui in train_inventory[abbr]:
+                count_overlap_instances += count
+    return count_overlap_instances, count_all_instances, count_all_instances-count_no_abbr_instances
 
 
 if __name__ == '__main__':
@@ -94,22 +110,45 @@ if __name__ == '__main__':
 
     # test on test set
     assign_collect = pickle_reader(PATH_TRAIN_COLLECTION)
-    print("Mvote on MIMIC test: ")
-    test_majority_vote(assign_collect, PATH_EVAL)
-    print("Mvote on share: ")
-    test_majority_vote(assign_collect, share_txt_path)
-    print("Mvote on msh: ")
-    test_majority_vote(assign_collect, msh_txt_path)
 
-    # intersections
-    train_inventory = build_inventory(assign_collect)
-    mimic_test_inventory = build_inventory(collect_train_abbr(PATH_EVAL))
-    share_inventory = build_inventory(collect_train_abbr(share_txt_path))
-    msh_inventory = build_inventory(collect_train_abbr(msh_txt_path))
+    # count number of instances for training dataset
+    count_all_instances = 0
+    for abbr, items in tqdm.tqdm(assign_collect.items()):
+        for cui, count in items.items():
+            count_all_instances += count
+    print(count_all_instances)
 
-    print("Intersection on MIMIC test: ")
-    compare_abbr_inventory(train_inventory, mimic_test_inventory)
-    print("Intersection on share: ")
-    compare_abbr_inventory(train_inventory, share_inventory)
-    print("Intersection on msh: ")
-    compare_abbr_inventory(train_inventory, msh_inventory)
+    # print("Mvote on MIMIC test: ")
+    # test_majority_vote(assign_collect, PATH_EVAL)
+    # print("Mvote on share: ")
+    # test_majority_vote(assign_collect, share_txt_path)
+    # print("Mvote on msh: ")
+    # test_majority_vote(assign_collect, msh_txt_path)
+
+    # # intersections
+    # train_inventory = build_inventory(assign_collect)
+    # mimic_test_inventory = build_inventory(collect_train_abbr(PATH_EVAL))
+    # share_inventory = build_inventory(collect_train_abbr(share_txt_path))
+    # msh_inventory = build_inventory(collect_train_abbr(msh_txt_path))
+    #
+    # print("Intersection on MIMIC test: ")
+    # compare_abbr_inventory(train_inventory, mimic_test_inventory)
+    # print("Intersection on share: ")
+    # compare_abbr_inventory(train_inventory, share_inventory)
+    # print("Intersection on msh: ")
+    # compare_abbr_inventory(train_inventory, msh_inventory)
+
+
+    # compare mapping instances
+    mimic_test_inventory = collect_train_abbr(PATH_EVAL)
+    share_inventory = collect_train_abbr(share_txt_path)
+    msh_inventory = collect_train_abbr(msh_txt_path)
+
+    mimic_test_overlap, mimic_test_all, mimic_test_has_abbr = compare_mapping_instances(assign_collect, mimic_test_inventory)
+    print("mimic test (all: %d, has abbr: %d, overlap: %d): %f" % (mimic_test_all, mimic_test_has_abbr, mimic_test_overlap, mimic_test_overlap/mimic_test_all))
+
+    share_overlap, share_all, share_has_abbr = compare_mapping_instances(assign_collect, share_inventory)
+    print("share (all: %d, has abbr: %d, overlap: %d): %f" % (share_all, share_has_abbr, share_overlap, share_overlap / share_all))
+
+    msh_overlap, msh_all, msh_has_abbr = compare_mapping_instances(assign_collect, msh_inventory)
+    print("msh (all: %d, has abbr: %d, overlap: %d): %f" % (msh_all, msh_has_abbr, msh_overlap, msh_overlap / msh_all))

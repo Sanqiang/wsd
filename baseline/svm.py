@@ -8,6 +8,7 @@ import tqdm
 import random
 from collections import defaultdict
 from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV
 from preprocess.file_helper import pickle_reader, pickle_writer
 from baseline.word_embedding import AbbrIndex
 
@@ -44,6 +45,35 @@ def train_sample(x, y, sample_size, random_seed=None):
     return np.vstack(x_train), y_train
 
 
+def svm_cross_validation(train_processed_path, abbr='pe'):
+    """
+    Tuning the parameters on largest abbr in train set.
+
+    :param train_processed_path:
+    :return:
+    """
+    content_vector = pickle_reader(train_processed_path + '/content_vectors/%s_vector.pkl' % abbr)
+    label2idx = {}
+    label_idx = 0
+    x = []
+    y = []
+    for instance_id, doc_id, pos, content_pos, content_vec, content, label in content_vector:
+        if label not in label2idx:
+            label2idx[label] = label_idx
+            label_idx += 1
+        x.append(content_vec)
+        y.append(label2idx[label])
+
+    x_train, y_train = train_sample(x, y, 500)
+    parameters = {'gamma': [1e-4, 1e-3, 1e-2],
+                  'C': [1e-1, 1, 10, 100, 1000]}
+    model = SVC(kernel='rbf')
+    model_cv = GridSearchCV(model, parameters, cv=5).fit(x_train, y_train)
+    print(model_cv.best_params_)
+    print(model_cv.best_score_)
+    return model_cv
+
+
 def train_svm(train_processed_path):
     # Load abbr index
     abbr_index = AbbrIndex(train_processed_path+'/abbr_index_data.pkl')
@@ -67,9 +97,9 @@ def train_svm(train_processed_path):
             abbr2idx_inventory[abbr] = label2idx
             # no need to train if only have 1 CUI
             if len(label2idx) > 1:
-                x_train, y_train = train_sample(x, y, 100)
+                x_train, y_train = train_sample(x, y, 2000)
                 # train svm model
-                model = SVC(kernel='rbf', gamma=0.2, C=0.1).fit(x_train, y_train)
+                model = SVC(kernel='rbf', gamma=0.01, C=1000).fit(x_train, y_train)
                 pickle_writer(model, train_processed_path + '/svm_models/%s.pkl' % abbr)
     pickle_writer(abbr2idx_inventory, train_processed_path+'/abbr_cui_idx_inventory.pkl')
 
@@ -125,7 +155,9 @@ if __name__ == '__main__':
     msh_test_path = data_path + 'msh/msh_processed/test/'
     share_test_path = data_path + 'share/processed/test/'
 
-    # train_svm(train_processed_path)
+    # svm_cross_validation(train_processed_path)
+
+    train_svm(train_processed_path)
 
     test_svm(mimic_test_path, train_processed_path)
     test_svm(msh_test_path, train_processed_path)

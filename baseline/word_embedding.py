@@ -10,7 +10,7 @@ from sklearn import feature_extraction
 from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 
 from collections import defaultdict, OrderedDict
-from preprocess.file_helper import txt_writer
+from preprocess.file_helper import txt_writer, txt_reader, pickle_writer
 
 
 def index_label_reader(index_list):
@@ -134,17 +134,27 @@ def load_dataset_corpus(file_path):
 
 
 def generate_train_files(txt_path, train_processed_path):
-    os.makedirs(train_processed_path, exist_ok=True)
-    # Find abbrs, build abbr index
-    print("Loading TRAIN data...")
-    abbr_index, train_no_mark = load_dataset_corpus(txt_path)
-    # save files
-    txt_writer(train_no_mark, train_processed_path + '/train_no_mark.txt')
-    abbr_index.save(train_processed_path + '/abbr_index_data.pkl')
+    # os.makedirs(train_processed_path, exist_ok=True)
+    # # Find abbrs, build abbr index
+    # print("Loading TRAIN data...")
+    # abbr_index, train_no_mark = load_dataset_corpus(txt_path)
+    # # save files
+    # txt_writer(train_no_mark, train_processed_path + '/train_no_mark.txt')
+    # abbr_index.save(train_processed_path + '/abbr_index_data.pkl')
+    #
+    # print("Training Word2Vec...")
+    # model = gensim.models.Word2Vec(Corpus(train_no_mark), workers=30, min_count=1)
+    # model.save(train_processed_path + '/train.model')
 
-    print("Training Word2Vec...")
-    model = gensim.models.Word2Vec(Corpus(train_no_mark), workers=30, min_count=1)
-    model.save(train_processed_path + '/train.model')
+    train_no_mark = txt_reader(train_processed_path + '/train_no_mark.txt')
+    print("Generating One-hot...")
+    vectorizer = CountVectorizer()
+    train_counts = vectorizer.fit_transform(train_no_mark)
+    print("One-hot feature number: ", len(vectorizer.get_feature_names()))
+    pickle_writer(vectorizer, train_processed_path + '/count_vectorizer.pkl')
+    print("Computing Tf-idf...")
+    tfidf_transformer = TfidfTransformer().fit(train_counts)
+    pickle_writer(tfidf_transformer, train_processed_path + '/tfidf_transformer.pkl')
 
 
 def generate_test_files(txt_path, test_processed_path):
@@ -172,6 +182,6 @@ if __name__ == '__main__':
 
     generate_train_files(PATH_TRAIN, train_processed_path)
 
-    generate_test_files(PATH_EVAL, mimic_test_path)
-    generate_test_files(msh_txt_path, msh_test_path)
-    generate_test_files(share_txt_path, share_test_path)
+    # generate_test_files(PATH_EVAL, mimic_test_path)
+    # generate_test_files(msh_txt_path, msh_test_path)
+    # generate_test_files(share_txt_path, share_test_path)
