@@ -153,6 +153,15 @@ def split_non_valid_cui(txt):
 
 
 def longform_replacer_job(idxs, txt_list, sense_list, txt_queue, rmapper):
+    '''
+    Find a longform in the text, replace it to the target format abbr|
+    :param idxs:
+    :param txt_list:
+    :param sense_list:
+    :param txt_queue:
+    :param rmapper:
+    :return:
+    '''
     for idx, txt, senses in zip(idxs, txt_list, sense_list):
         for sense in senses:
             longform = sense.lower()
@@ -211,11 +220,11 @@ if __name__ == '__main__':
     ######################################
     # Read texts from dataset
     ######################################
-    BASE_FOLDER = '/home/mengr/project/wsd/wsd_data/mimic/'
+    BASE_FOLDER = '/exp_data/wsd_data/'
 
-    PATH_FOLDER = BASE_FOLDER + 'find_longform_mimic/'
-    PATH_FOLDER_PROCESSED = BASE_FOLDER + 'find_longform_mimic_processed/'
-    PATH_PROCESSED_INVENTORY_PKL = BASE_FOLDER + 'final_cleaned_sense_inventory.cased.processed.pkl'
+    PATH_FOLDER = BASE_FOLDER + 'mimic/find_longform_mimic/'
+    PATH_FOLDER_PROCESSED = BASE_FOLDER + 'mimic/find_longform_mimic_processed/'
+    PATH_PROCESSED_INVENTORY_PKL = BASE_FOLDER + 'sense_inventory/final_cleaned_sense_inventory.cased.processed.pkl'
 
     # Get pickle generated from mimic_inventory.py
     inventory = pickle_reader(PATH_PROCESSED_INVENTORY_PKL)

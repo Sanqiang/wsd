@@ -3177,12 +3177,12 @@ def multihead_attention(query_antecedent,
           tmp_v = common_layers.tf_inplace_ops().alias_inplace_update(
               tmp_v, decode_loop_step, tf.squeeze(v, axis=2))
           v = cache["v"] = tf.transpose(tmp_v, perm=[1, 2, 0, 3])
-
+    # [batch_size, num_heads, context_len, sub_channel_dim]
     q = split_heads(q, num_heads)
     if cache is None:
       k = split_heads(k, num_heads)
       v = split_heads(v, num_heads)
-
+    # to apply the scalling in eq(1), by multiplying sqrt(d_k)
     key_depth_per_head = total_key_depth // num_heads
     if not vars_3d:
       q *= key_depth_per_head**-0.5
@@ -3193,6 +3193,7 @@ def multihead_attention(query_antecedent,
       if isinstance(x, tuple):
         x, additional_returned_value = x  # Unpack
     elif attention_type == "dot_product":
+      # [batch_size, num_heads, length_q, depth_v]
       x = dot_product_attention(q, k, v, bias, dropout_rate, image_shapes,
                                 save_weights_to=save_weights_to,
                                 make_image_summary=make_image_summary,
@@ -3243,6 +3244,7 @@ def multihead_attention(query_antecedent,
       assert attention_type == "unmasked_dilated_1d"
       x = dilated_self_attention_1d(q, k, v, block_length, block_width,
                                     gap_size, num_memory_blocks)
+    # [batch_size, num_heads, length_q, depth_v] -> [batch_size, length_q, channel_dim]
     x = combine_heads(x)
 
     # Set last dim specifically.
@@ -3255,6 +3257,7 @@ def multihead_attention(query_antecedent,
       o_var = tf.reshape(o_var, [total_value_depth, output_depth])
       x = tf.tensordot(x, o_var, axes=1)
     else:
+      # another linear before returning, [batch_size, context_len, channel_dim]
       x = common_layers.dense(
           x, output_depth, use_bias=False, name="output_transform")
     if additional_returned_value is not None:

@@ -117,15 +117,26 @@ class ContextEncoder(BaseGraph):
             return contexts_emb
 
     def context_encoder(self, contexts_emb, contexts, abbr_inp_emb):
+        """
+
+        :param contexts_emb: a tensor of [batch_size, max_context_len, emb_dim]
+        :param contexts: a list of [max_context_len, batch_size]
+        :param abbr_inp_emb: a tensor of [batch_size, num_abbr=1, emb_dim]
+        :return:
+        """
         weights = {}
+        # Create an bias tensor as mask (big neg values for padded part), input=[batch_size, context_len], output=[batch_size, 1, 1, context_len]
         contexts_bias = common_attention.attention_bias_ignore_padding(
             tf.to_float(tf.equal(tf.stack(contexts, axis=1),
                                  self.data.voc.encode(constant.PAD))))
+        # add dropout to context input [batch_size, max_context_len, emb_dim]
         contexts_emb = tf.nn.dropout(contexts_emb,
                                      1.0 - self.hparams.layer_prepostprocess_dropout)
+        # get the output vector of transformer
         encoder_ouput = transformer.transformer_encoder_abbr(
             contexts_emb, contexts_bias, abbr_inp_emb,
-            tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams,
+            abbr_bias = tf.zeros([self.model_config.batch_size,1,1,1]),
+            hparams=self.hparams,
             save_weights_to=weights)
 
         return encoder_ouput, weights
@@ -222,15 +233,15 @@ class Graph(BaseGraph):
 
     def create_model(self):
         with tf.variable_scope('variables'):
-            contexts = []
+            contexts_inp = []
             for _ in range(self.model_config.max_context_len):
-                contexts.append(
+                contexts_inp.append(
                     tf.zeros(self.model_config.batch_size, tf.int32, name='context_input'))
 
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
 
-            # Generate mask that mask the candidate sense to be predicted as 1 and others to 0
+            # Generate mask that masks the candidate sense to be predicted as 1 and others to 0, mask embedding is a one-hot matrix of [num_abbr, num_sense]
             # The mask is 2 dimension vector with size [batch_size, sense_size]
             mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
@@ -259,8 +270,10 @@ class Graph(BaseGraph):
                                              initializer=tf.contrib.layers.xavier_initializer())
 
             if self.model_config.abbr_mode == 'abbr':
+                # learn a new embedding for each abbr
                 abbr_inp_emb = self.embedding_fn(abbr_inp, self.abbr_embs)
             elif self.model_config.abbr_mode == 'sense':
+                # take the weighted-averaged sense embedding of this abbr as the abbr embedding
                 sense_weight = tf.get_variable('sense_weight',
                                                [1, 1, self.data.sen_cnt], tf.float32,
                                                initializer=tf.contrib.layers.xavier_initializer())
@@ -269,12 +282,16 @@ class Graph(BaseGraph):
             else:
                 raise ValueError('Unsupported abbr mode.')
 
+            # get the embedding of abbr word
             abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
-            contexts_emb = tf.stack(context_encoder.embed_context(contexts, abbr_inp_emb), axis=1)
+            # get the embedding of context words
+            contexts_emb = tf.stack(context_encoder.embed_context(contexts_inp, abbr_inp_emb), axis=1)
 
-            encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
+            # get the output of transformer. If mode='match', the vector is the predicted sense embedding
+            encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts_inp, abbr_inp_emb)
             # encoder_outputs = transformer.transformer_encoder_addabbr(
             #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
+
             aggregate_state = self.get_aggregate_state(encoder_outputs)
             if self.model_config.hub_module_embedding:
                 # Append embedding from hub text model
@@ -302,7 +319,7 @@ class Graph(BaseGraph):
                 raise ValueError("Unsupported prediction mode.")
 
             if self.model_config.pointer_mode:
-                ptr_network = PointerNetwork(self.is_train, self.model_config, self.data, weights, contexts)
+                ptr_network = PointerNetwork(self.is_train, self.model_config, self.data, weights, contexts_inp)
                 if self.model_config.pointer_mode == 'first_dist':
                     ptr_logits = ptr_network.getLogitFromFirstSelfAttnDist()
                     # TODO(sanqiang): ptr logit
@@ -343,7 +360,7 @@ class Graph(BaseGraph):
                     loss += self.style_loss
 
         obj = {
-            'contexts': contexts,
+            'contexts': contexts_inp,
             'abbr_inp': abbr_inp,
             'sense_inp': sense_inp,
             'pred': pred,

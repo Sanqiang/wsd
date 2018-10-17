@@ -11,8 +11,9 @@ from collections import defaultdict
 
 stopword_set = set(stopwords.words('english'))
 
-PATH_INVENTORY_JSON = '/Users/sanqiangzhao/git/wsd_data/mimic/final_cleaned_sense_inventory.json'
-PATH_PROCESSED_INVENTORY_PKL = '/Users/sanqiangzhao/git/wsd_data/mimic/final_cleaned_sense_inventory.cased.processed.pkl'
+ROOT_PATH = "/Users/memray/Project/upmc_wsd/wsd_data/sense_inventory/"
+PATH_INVENTORY_JSON = ROOT_PATH + 'final_cleaned_sense_inventory_with_testsets.json'
+PATH_PROCESSED_INVENTORY_PKL = ROOT_PATH + 'final_cleaned_sense_inventory.cased.processed.pkl'
 
 
 def unify_abbr(ignore_unigram_longform=True):
@@ -86,11 +87,12 @@ def unify_abbr(ignore_unigram_longform=True):
             if cur_abbr:
                 cnt_match += 1
                 mapper[cur_abbr][cui].append(longform)
-                # print('%s is %s from %s' % (longform, cur_abbr, abbrs))
+                print('%s is %s from %s' % (longform, cur_abbr, abbrs))
             else:
                 cnt_nomatch += 1
-                # print('%s not matched for estimate_abbrs: %s and abbrs:%s' % (longform, estimate_abbrs, abbrs))
-    print('match:%s and nonmatch%s' % (cnt_match, cnt_nomatch))
+                print('%s not matched for estimate_abbrs: %s and abbrs:%s' % (longform, estimate_abbrs, abbrs))
+
+    print('match:%s and nonmatch: %s' % (cnt_match, cnt_nomatch))
 
     output['abbr-cui-longforms'] = output
     # Reverse Process
@@ -112,8 +114,10 @@ def unify_abbr(ignore_unigram_longform=True):
                 else:
                     rmapper[longform] = (abbr, cui)
     output['longform-abbr_cui'] = rmapper
+
     with open(PATH_PROCESSED_INVENTORY_PKL, 'wb') as output_file:
         pickle.dump(output, output_file)
+
 
 
 unify_abbr()

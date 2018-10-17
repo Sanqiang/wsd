@@ -87,16 +87,14 @@ def find_match_longforms(long_sense_dict, chunk_id, chunk_dataframe, output_json
 if __name__ == '__main__':
     # load text, put them into a dict as well
     mimic3_csv_path = '/home/luoz3/data/mimic/mimic3/NOTEEVENTS.csv'
-    # mimic3_csv_path = '/Users/memray/Data/upmc/mimic3/NOTEEVENTS.csv'
-    data_root_path = '/home/mengr/Project/wsd/wsd_data/mimic/'
-    sense_inventory_path = os.path.join(data_root_path, 'final_cleaned_sense_inventory.pkl')
-    output_folder_path = os.path.join(data_root_path, 'find_longform_mimic/')
-    # output_folder_path = '/Users/memray/Project/upmc_wsd/wsd_data/mimic/find_longform_mimic/'
+    data_root_path = '/home/mengr/Project/wsd/wsd_data/'
+    sense_inventory_path = os.path.join(data_root_path, 'sense_inventory', 'final_cleaned_sense_inventory_with_testsets.pkl')
+    output_folder_path = os.path.join(data_root_path, 'mimic', 'find_longform_mimic/')
 
     sense_inventory_dict, long_sense_dict = load_final_sense_inventory(sense_inventory_path)
 
     chunk_size = 50000
-    n_jobs = 16
+    n_jobs = 32
     mimic_csv_df = pd.read_csv(mimic3_csv_path, chunksize=chunk_size)
 
     if not os.path.exists(output_folder_path):

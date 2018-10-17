@@ -1246,9 +1246,11 @@ def transformer_encoder_abbr(encoder_input,
   """A stack of transformer layers.
 
   Args:
-    encoder_input: a Tensor
+    encoder_input: a Tensor [batch_size, context_len, embed_dim]
     encoder_self_attention_bias: bias Tensor for self-attention
-       (see common_attention.attention_bias())
+       (see common_attention.attention_bias()) [batch_size, 1, 1, context_len]
+    abbr_input: a Tensor of abbreviation/acronym embedding ()
+    abbr_bias: bias Tensor for abbr  [batch_size, 1, 1, 1]
     hparams: hyperparameters for model
     name: a string
     nonpadding: optional Tensor with shape [batch_size, encoder_length]
@@ -1283,8 +1285,9 @@ def transformer_encoder_abbr(encoder_input,
     for layer in range(hparams.num_encoder_layers or hparams.num_hidden_layers):
       with tf.variable_scope("layer_%d" % layer):
         with tf.variable_scope("self_attention"):
+          # transformed x, shape = [batch_size, context_len, channel_dim]
           y = common_attention.multihead_attention(
-              common_layers.layer_preprocess(x, hparams),
+              common_layers.layer_preprocess(x, hparams), # apply n (layer normalization)
               None,
               encoder_self_attention_bias,
               hparams.attention_key_channels or hparams.hidden_size,
@@ -1299,8 +1302,26 @@ def transformer_encoder_abbr(encoder_input,
               dropout_broadcast_dims=attention_dropout_broadcast_dims,
               max_length=hparams.get("max_length"),
               vars_3d=hparams.get("attention_variables_3d"))
-          x = common_layers.layer_postprocess(x, y, hparams)
+          x = common_layers.layer_postprocess(x, y, hparams) # apply d&a(dropout & add previous_value)
+
         with tf.variable_scope("encdec_attention"):
+          # shape = [batch_size, context_len, channel_dim]
+          y = common_attention.multihead_attention(
+              common_layers.layer_preprocess(abbr_input, hparams),
+              x,
+              encoder_self_attention_bias,
+              hparams.attention_key_channels or hparams.hidden_size,
+              hparams.attention_value_channels or hparams.hidden_size,
+              hparams.hidden_size,
+              hparams.num_heads,
+              hparams.attention_dropout,
+              save_weights_to=save_weights_to,
+              cache=None,
+              make_image_summary=make_image_summary,
+              dropout_broadcast_dims=attention_dropout_broadcast_dims,
+              max_length=hparams.get("max_length"),
+              vars_3d=hparams.get("attention_variables_3d"))
+          '''
             y = common_attention.multihead_attention(
                 common_layers.layer_preprocess(x, hparams),
                 abbr_input,
@@ -1316,7 +1337,9 @@ def transformer_encoder_abbr(encoder_input,
                 dropout_broadcast_dims=attention_dropout_broadcast_dims,
                 max_length=hparams.get("max_length"),
                 vars_3d=hparams.get("attention_variables_3d"))
-            x = common_layers.layer_postprocess(x, y, hparams)
+          '''
+            # shape = [batch_size, context_len, channel_dim]
+          x = common_layers.layer_postprocess(x, y, hparams)
         with tf.variable_scope("ffn"):
           y = transformer_ffn_layer(
               common_layers.layer_preprocess(x, hparams),
