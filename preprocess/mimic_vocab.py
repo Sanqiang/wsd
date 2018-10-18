@@ -9,7 +9,8 @@ from util.data.text_encoder import SubwordTextEncoder
 from util.data import text_encoder
 
 
-ROOT_PATH = "/Users/memray/Project/upmc_wsd/wsd_data/mimic/"
+ROOT_PATH = "/home/mengr/Project/wsd/wsd_data/mimic/"
+# ROOT_PATH = "/Users/memray/Project/upmc_wsd/wsd_data/mimic/"
 PATH_PROCESSED_FODER = ROOT_PATH + 'processed/'
 PATH_TRAIN = ROOT_PATH + 'train'
 PATH_EVAL = ROOT_PATH + 'eval'
@@ -47,8 +48,11 @@ abbr2cui = defaultdict(set)
 
 c = c.most_common()
 lines = []
+
+# Build vocab by iterating each word appearing in the text
 for w, cnt in c:
-    if w.startswith('abbr|') and len(w.split('|')) == 3:
+    # special tokens for labels,
+    if w.startswith('abbr|') and len(w.split('|')) >= 3:
         pair = w.split('|')
         abbrs.add(pair[1])
         cuis.add(pair[2])
@@ -59,6 +63,7 @@ for w, cnt in c:
 open(PATH_VOCAB, 'w').write('\n'.join(lines))
 print('Created Vocab %s' % PATH_VOCAB)
 
+# Create subword vocab
 sub_word_feeder = {}
 for line in open(PATH_VOCAB):
     items = line.split('\t')
