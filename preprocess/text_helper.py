@@ -373,3 +373,20 @@ def recover_upper_cui(txt):
     annotate_ptn = re.compile(r"(abbr\|[\w\-/'.]+?\|)c(\d+)")
     txt = re.sub(annotate_ptn, r"\1C\2", txt)
     return txt
+
+
+def is_valid_abbr(abbr):
+    """
+    Check if abbr is valid.
+
+    :param abbr:
+    :return:
+    """
+    # filter out complicated cases
+    if len(re.split(r'[\s\[\]\{\}]+', abbr)) > 1:
+        return False
+    # filter out long forms
+    elif len(abbr) > 7 and re.fullmatch(r'\w+', abbr):
+        return False
+    else:
+        return True

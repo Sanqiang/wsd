@@ -3,10 +3,12 @@ import tqdm
 from collections import Counter, defaultdict
 from preprocess.file_helper import pickle_writer, pickle_reader
 
+# # mimic v1 (deprecated)
+# PATH_TRAIN = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
+# PATH_EVAL = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 
-PATH_TRAIN = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
-PATH_EVAL = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
-
+PATH_TRAIN = '/exp_data/wsd_data/mimic/train'
+PATH_EVAL = '/exp_data/wsd_data/mimic/eval'
 PATH_TRAIN_COLLECTION = '/home/luoz3/data/mimic/train_abbr_collection.pkl'
 data_path = '/home/luoz3/data/'
 msh_txt_path = data_path + 'msh/msh_processed/msh_processed.txt'
@@ -105,39 +107,38 @@ def compare_mapping_instances(train_inventory_counter, test_inventory_counter):
 
 if __name__ == '__main__':
 
-    # # process train abbr info
-    # collect_train_abbr(PATH_TRAIN, PATH_TRAIN_COLLECTION)
+    # process train abbr info
+    assign_collect = collect_train_abbr(PATH_TRAIN, PATH_TRAIN_COLLECTION)
 
     # test on test set
-    assign_collect = pickle_reader(PATH_TRAIN_COLLECTION)
+    # assign_collect = pickle_reader(PATH_TRAIN_COLLECTION)
 
-    # count number of instances for training dataset
-    count_all_instances = 0
-    for abbr, items in tqdm.tqdm(assign_collect.items()):
-        for cui, count in items.items():
-            count_all_instances += count
-    print(count_all_instances)
+    # # count number of instances in training dataset
+    # count_all_instances = 0
+    # for abbr, items in tqdm.tqdm(assign_collect.items()):
+    #     for cui, count in items.items():
+    #         count_all_instances += count
+    # print(count_all_instances)
 
-    # print("Mvote on MIMIC test: ")
-    # test_majority_vote(assign_collect, PATH_EVAL)
-    # print("Mvote on share: ")
-    # test_majority_vote(assign_collect, share_txt_path)
-    # print("Mvote on msh: ")
-    # test_majority_vote(assign_collect, msh_txt_path)
+    print("Mvote on MIMIC test: ")
+    test_majority_vote(assign_collect, PATH_EVAL)
+    print("Mvote on share: ")
+    test_majority_vote(assign_collect, share_txt_path)
+    print("Mvote on msh: ")
+    test_majority_vote(assign_collect, msh_txt_path)
 
-    # # intersections
-    # train_inventory = build_inventory(assign_collect)
-    # mimic_test_inventory = build_inventory(collect_train_abbr(PATH_EVAL))
-    # share_inventory = build_inventory(collect_train_abbr(share_txt_path))
-    # msh_inventory = build_inventory(collect_train_abbr(msh_txt_path))
-    #
-    # print("Intersection on MIMIC test: ")
-    # compare_abbr_inventory(train_inventory, mimic_test_inventory)
-    # print("Intersection on share: ")
-    # compare_abbr_inventory(train_inventory, share_inventory)
-    # print("Intersection on msh: ")
-    # compare_abbr_inventory(train_inventory, msh_inventory)
+    # intersections
+    train_inventory = build_inventory(assign_collect)
+    mimic_test_inventory = build_inventory(collect_train_abbr(PATH_EVAL))
+    share_inventory = build_inventory(collect_train_abbr(share_txt_path))
+    msh_inventory = build_inventory(collect_train_abbr(msh_txt_path))
 
+    print("Intersection on MIMIC test: ")
+    compare_abbr_inventory(train_inventory, mimic_test_inventory)
+    print("Intersection on share: ")
+    compare_abbr_inventory(train_inventory, share_inventory)
+    print("Intersection on msh: ")
+    compare_abbr_inventory(train_inventory, msh_inventory)
 
     # compare mapping instances
     mimic_test_inventory = collect_train_abbr(PATH_EVAL)
