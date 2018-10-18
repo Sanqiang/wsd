@@ -9,29 +9,34 @@ from util.data.text_encoder import SubwordTextEncoder
 from util.data import text_encoder
 
 
-PATH_PROCESSED_FODER = '/home/luoz3/data/mimic/processed/'
-PATH_TRAIN = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
-PATH_EVAL = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
-PATH_VOCAB = '/home/zhaos5/projs/wsd/wsd_data/mimic/vocab'
-PATH_SUBVOCAB = '/home/zhaos5/projs/wsd/wsd_data/mimic/subvocab'
-PATH_ABBR = '/home/zhaos5/projs/wsd/wsd_data/mimic/abbr'
-PATH_CUI = '/home/zhaos5/projs/wsd/wsd_data/mimic/cui'
-PATH_ABBR_MASK = '/home/zhaos5/projs/wsd/wsd_data/mimic/abbr_mask'
+ROOT_PATH = "/Users/memray/Project/upmc_wsd/wsd_data/mimic/"
+PATH_PROCESSED_FODER = ROOT_PATH + 'processed/'
+PATH_TRAIN = ROOT_PATH + 'train'
+PATH_EVAL = ROOT_PATH + 'eval'
+PATH_VOCAB = ROOT_PATH + 'vocab'
+PATH_SUBVOCAB = ROOT_PATH + 'subvocab'
+PATH_ABBR = ROOT_PATH + 'abbr'
+PATH_CUI = ROOT_PATH + 'cui'
+PATH_ABBR_MASK = ROOT_PATH + 'abbr_mask'
 
 
 rd.seed(1234)
 train_lines, eval_lines = [], []
 c = Counter()
+
+# read regex-processed lines and split into train/test randomly
 for file in listdir(PATH_PROCESSED_FODER):
     for line in open(PATH_PROCESSED_FODER + file):
+        # ignore lines with no regex-replaced abbr tags
         if 'abbr|' not in line:
             continue
-        # Split the train and eval data
+        # Split the train and eval data randomly
         if rd.random() <= 0.025:
             eval_lines.append(line)
         else:
             c.update(line.split())
             train_lines.append(line)
+
 open(PATH_TRAIN, 'w').write(''.join(train_lines))
 open(PATH_EVAL, 'w').write(''.join(eval_lines))
 print('Generate Split files.')

@@ -221,9 +221,14 @@ if __name__ == '__main__':
     # Read texts from dataset
     ######################################
     BASE_FOLDER = '/exp_data/wsd_data/'
+    # BASE_FOLDER = '/Users/memray/Project/upmc_wsd/wsd_data/'
 
     PATH_FOLDER = BASE_FOLDER + 'mimic/find_longform_mimic/'
-    PATH_FOLDER_PROCESSED = BASE_FOLDER + 'mimic/find_longform_mimic_processed/'
+    PATH_FOLDER_PROCESSED = BASE_FOLDER + 'mimic/processed/'
+
+    if not os.path.exists(PATH_FOLDER_PROCESSED):
+        os.makedirs(PATH_FOLDER_PROCESSED)
+
     PATH_PROCESSED_INVENTORY_PKL = BASE_FOLDER + 'sense_inventory/final_cleaned_sense_inventory.cased.processed.pkl'
 
     # Get pickle generated from mimic_inventory.py
@@ -255,6 +260,10 @@ if __name__ == '__main__':
         print("Start File for %s" % filename)
         mimic_txt = []
         mimic_present_senses = []
+
+        if not os.path.exists(PATH_FOLDER+filename):
+            continue
+
         for line in open(PATH_FOLDER+filename, "r"):
             obj = json.loads(line)
             text = obj['TEXT']
