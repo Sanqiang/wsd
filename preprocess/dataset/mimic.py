@@ -220,7 +220,7 @@ if __name__ == '__main__':
     ######################################
     # Read texts from dataset
     ######################################
-    BASE_FOLDER = '/exp_data/wsd_data/'
+    BASE_FOLDER = '/home/mengr/Project/wsd/wsd_data/'
     # BASE_FOLDER = '/Users/memray/Project/upmc_wsd/wsd_data/'
 
     PATH_FOLDER = BASE_FOLDER + 'mimic/find_longform_mimic/'
