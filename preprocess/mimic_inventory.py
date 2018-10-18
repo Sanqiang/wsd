@@ -11,7 +11,8 @@ from collections import defaultdict
 
 stopword_set = set(stopwords.words('english'))
 
-ROOT_PATH = "/Users/memray/Project/upmc_wsd/wsd_data/sense_inventory/"
+ROOT_PATH = "/home/mengr/Project/wsd/wsd_data/sense_inventory/"
+# ROOT_PATH = "/Users/memray/Project/upmc_wsd/wsd_data/sense_inventory/"
 PATH_INVENTORY_JSON = ROOT_PATH + 'final_cleaned_sense_inventory_with_testsets.json'
 PATH_PROCESSED_INVENTORY_PKL = ROOT_PATH + 'final_cleaned_sense_inventory.cased.processed.pkl'
 
