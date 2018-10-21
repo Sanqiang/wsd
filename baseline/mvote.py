@@ -34,7 +34,7 @@ def predict_majority_vote(train_counter, test_path):
     return instance_collection
 
 
-def test_majority_vote(train_counter, test_path):
+def evaluate_score_majority_vote(train_counter, test_path):
     assign_map = {}
     correct_cnt, total_cnt = 0.0, 0.0
     for abbr in train_counter:
@@ -68,14 +68,14 @@ if __name__ == '__main__':
     mimic_train_counter = pickle_reader(train_counter_path)
 
     #####################################
-    # testing (deprecated, but faster)
+    # testing (directly compute score, not using standard pipeline)
     #####################################
     # print("Mvote on MIMIC test: ")
-    # test_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
+    # evaluate_score_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
     # print("Mvote on ShARe/CLEF: ")
-    # test_majority_vote(mimic_train_counter, dataset_paths.share_txt)
+    # evaluate_score_majority_vote(mimic_train_counter, dataset_paths.share_txt)
     # print("Mvote on MSH: ")
-    # test_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
+    # evaluate_score_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
 
     #####################################
     # testing (using standard evaluation pipeline)

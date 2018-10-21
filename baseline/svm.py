@@ -105,48 +105,56 @@ def train_svm(train_processed_path):
     pickle_writer(abbr_cui2idx_inventory, train_processed_path+'/abbr_cui_idx_inventory.pkl')
 
 
-def test_svm(test_processed_path, train_processed_path):
+def evaluate_score_svm(test_processed_path, train_processed_path):
     # Load abbr index
     abbr_idx_mapper = pickle_reader(test_processed_path + '/abbr_idx_mapper.pkl')
     abbr_idx_mapper_train = pickle_reader(train_processed_path + '/abbr_idx_mapper.pkl')
     abbr2train_idx = abbr_idx_mapper_train['abbr2idx']
     abbr_cui2idx_inventory = pickle_reader(train_processed_path+'/abbr_cui_idx_inventory.pkl')
 
-    TP = 0
-    all = 0
-    all_no_label = 0
+    count_correct = 0
+    count_all = 0
+    count_model_correct = 0
+    count_model_all = 0
+    count_no_label = 0
+    count_correct_without_predict = 0
     # generate testing data
     for abbr, abbr_idx in tqdm.tqdm(abbr_idx_mapper['abbr2idx'].items()):
         content_vector = pickle_reader(test_processed_path + '/content_vectors/%d_vector.pkl' % abbr_idx)
         if abbr not in abbr_cui2idx_inventory:
-            all += len(content_vector)
-            all_no_label += len(content_vector)
+            count_all += len(content_vector)
+            count_no_label += len(content_vector)
         else:
             label2idx = abbr_cui2idx_inventory[abbr]
-            all += len(content_vector)
-            count_no_label_instances = 0
+            count_all += len(content_vector)
             x = []
             y = []
-            for global_instance_idx, doc_id, pos, content_pos, content_vec, content, label in content_vector:
+            for _, _, _, _, content_vec, _, label in content_vector:
+                # if true label not in train collection
                 if label not in label2idx:
-                    count_no_label_instances += 1
+                    count_no_label += 1
+                # if only have 1 CUI
+                elif len(label2idx) == 1:
+                    count_correct += 1
+                    count_correct_without_predict += 1
+                # need predict
                 else:
                     x.append(content_vec)
                     y.append(label2idx[label])
-            all_no_label += count_no_label_instances
-            # if only have 1 CUI
-            if len(label2idx) == 1:
-                TP += len(y)
-            elif y==[]:
-                continue
-            else:
+            # predict
+            if len(y) > 0:
+                count_model_all += len(y)
                 model = pickle_reader(train_processed_path + '/svm_models/%d_svm.pkl' % abbr2train_idx[abbr])
                 y_pred = model.predict(np.vstack(x))
-                TP += sum(y == y_pred)
+                temp_correct = sum(y == y_pred)
+                count_correct += temp_correct
+                count_model_correct += temp_correct
 
-    print("Accuracy: ", TP/all)
-    print("Num.instances: ", all)
-    print("Num.no labels: ", all_no_label)
+    print("DataSet Accuracy (all instances): ", count_correct/count_all)
+    print("Model Accuracy (only ambiguous instances): ", count_model_correct/count_model_all)
+    print("Num.instances: ", count_all)
+    print("Num.gt CUI not found for the abbr: ", count_no_label)
+    print("Num.correct_without_predict", count_correct_without_predict)
 
 
 def predict_svm(test_processed_path, train_processed_path):
@@ -187,11 +195,12 @@ def predict_svm(test_processed_path, train_processed_path):
                         abbr=abbr,
                         sense_pred=label
                     ))
+                # need predict
                 else:
                     x.append(content_vec)
                     y.append(label2idx[label])
                     global_idx_list.append(global_instance_idx)
-
+            # predict
             if len(y) > 0:
                 model = pickle_reader(train_processed_path + '/svm_models/%d_svm.pkl' % abbr2train_idx[abbr])
                 y_pred = model.predict(np.vstack(x))
@@ -225,32 +234,33 @@ if __name__ == '__main__':
     # train_svm(dataset_paths.mimic_train_folder)
 
     #####################################
-    # testing (deprecated, but faster)
-    #####################################
-    # test_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
-    # test_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    # test_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
-
-    #####################################
-    # testing (using standard evaluation pipeline)
+    # testing (directly compute score, not using standard pipeline)
     #####################################
 
-    # load test sets
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    evaluate_score_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
+    evaluate_score_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    evaluate_score_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
 
-    print("SVM on MIMIC test: ")
-    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
-    mimic_test_collection_pred = predict_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
-    evaluation(mimic_test_collection_true, mimic_test_collection_pred)
-
-    print("SVM on ShARe/CLEF: ")
-    share_collection_true = share_collector.generate_instance_collection()
-    share_collection_pred = predict_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    evaluation(share_collection_true, share_collection_pred)
-
-    print("SVM on MSH: ")
-    msh_collection_true = msh_collector.generate_instance_collection()
-    msh_collection_pred = predict_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
-    evaluation(msh_collection_true, msh_collection_pred)
+    # #####################################
+    # # testing (using standard evaluation pipeline)
+    # #####################################
+    #
+    # # load test sets
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    #
+    # print("SVM on MIMIC test: ")
+    # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    # mimic_test_collection_pred = predict_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
+    # evaluation(mimic_test_collection_true, mimic_test_collection_pred)
+    #
+    # print("SVM on ShARe/CLEF: ")
+    # share_collection_true = share_collector.generate_instance_collection()
+    # share_collection_pred = predict_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    # evaluation(share_collection_true, share_collection_pred)
+    #
+    # print("SVM on MSH: ")
+    # msh_collection_true = msh_collector.generate_instance_collection()
+    # msh_collection_pred = predict_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    # evaluation(msh_collection_true, msh_collection_pred)
