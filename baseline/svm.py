@@ -222,7 +222,7 @@ if __name__ == '__main__':
 
     # svm_cross_validation(dataset_paths.mimic_train_folder, abbr_idx=40)
 
-    train_svm(dataset_paths.mimic_train_folder)
+    # train_svm(dataset_paths.mimic_train_folder)
 
     #####################################
     # testing (deprecated, but faster)
@@ -248,7 +248,7 @@ if __name__ == '__main__':
     print("SVM on ShARe/CLEF: ")
     share_collection_true = share_collector.generate_instance_collection()
     share_collection_pred = predict_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    evaluation(mimic_test_collection_true, mimic_test_collection_pred)
+    evaluation(share_collection_true, share_collection_pred)
 
     print("SVM on MSH: ")
     msh_collection_true = msh_collector.generate_instance_collection()
