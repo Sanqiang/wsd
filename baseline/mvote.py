@@ -54,6 +54,7 @@ def evaluate_score_majority_vote(train_counter, test_path):
 
     acc = correct_cnt / total_cnt
     print('Accuray = %s' % acc)
+    print()
     return acc
 
 

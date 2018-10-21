@@ -213,6 +213,7 @@ def evaluation(instance_collection_true, instance_collection_pred):
 
     acc = count_correct / count_total
     print('Accuray = %s' % acc)
+    print()
     return acc
 
 

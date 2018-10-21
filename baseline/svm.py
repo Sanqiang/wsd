@@ -153,8 +153,9 @@ def evaluate_score_svm(test_processed_path, train_processed_path):
     print("DataSet Accuracy (all instances): ", count_correct/count_all)
     print("Model Accuracy (only ambiguous instances): ", count_model_correct/count_model_all)
     print("Num.instances: ", count_all)
-    print("Num.gt CUI not found for the abbr: ", count_no_label)
-    print("Num.correct_without_predict", count_correct_without_predict)
+    print("Num.gt abbr-CUI mapping not found: ", count_no_label)
+    print("Num.correct without predict", count_correct_without_predict)
+    print()
 
 
 def predict_svm(test_processed_path, train_processed_path):
@@ -236,9 +237,11 @@ if __name__ == '__main__':
     #####################################
     # testing (directly compute score, not using standard pipeline)
     #####################################
-
+    print("SVM on MIMIC test: ")
     evaluate_score_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
+    print("SVM on ShARe/CLEF: ")
     evaluate_score_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    print("SVM on MSH: ")
     evaluate_score_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
 
     # #####################################
