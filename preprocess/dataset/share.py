@@ -7,10 +7,13 @@ import os
 import re
 import tqdm
 from collections import defaultdict
-from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover, recover_upper_cui
+from preprocess.text_helper import white_space_remover, repeat_non_word_remover, recover_upper_cui, is_valid_abbr
 from preprocess.text_helper import TextProcessor, CoreNLPTokenizer, TextTokenFilter
-from preprocess.file_helper import txt_reader, txt_writer, json_writer
+from preprocess.file_helper import txt_writer, json_writer, json_reader
 from preprocess.dataset.mimic import sub_deid_patterns_mimic
+
+
+toknizer = CoreNLPTokenizer()
 
 
 def add_annotation_share(folder_path):
@@ -22,6 +25,7 @@ def add_annotation_share(folder_path):
     print("Processing annotations...")
     # read original data
     abbr_dict = defaultdict(list)
+    abbr_invalid_dict = defaultdict(list)
     file_list = sorted(os.listdir(folder_path))
 
     docs_processed = []
@@ -47,12 +51,30 @@ def add_annotation_share(folder_path):
             start = int(start)
             end = int(end)
             abbr = doc[start:end]
-            # skip multi-word abbrs
-            if " " in abbr:
-                continue
+
             # skip instances without CUI
-            elif label == "CUI-less":
+            if label == "CUI-less":
                 continue
+            # skip multi-word abbrs
+            elif " " in abbr:
+                if label not in abbr_invalid_dict[abbr]:
+                    abbr_invalid_dict[abbr].append(label)
+                continue
+            # skip invalid abbrs
+            elif not is_valid_abbr(abbr):
+                if label not in abbr_invalid_dict[abbr]:
+                    abbr_invalid_dict[abbr].append(label)
+                continue
+            # skip abbrs which will be splitted by tokenizer
+            elif " " in toknizer.process_single_text(abbr):
+                if label not in abbr_invalid_dict[abbr]:
+                    abbr_invalid_dict[abbr].append(label)
+                continue
+            # correct start position
+            elif abbr.startswith('\n'):
+                start += 1
+                abbr = doc[start:end]
+
             # add unseen CUIs to abbr
             if label not in abbr_dict[abbr]:
                 abbr_dict[abbr].append(label)
@@ -65,7 +87,7 @@ def add_annotation_share(folder_path):
             last_abbr_end = end
         temp_doc += doc[last_abbr_end:]
         docs_processed.append(temp_doc)
-    return docs_processed, abbr_dict
+    return docs_processed, abbr_dict, abbr_invalid_dict
 
 
 def merge_inventories(inventory1, inventory2):
@@ -97,18 +119,20 @@ if __name__ == '__main__':
     # Process ShARe/CLEF documents (only one word abbrs)
     #############################
 
-    share_txt_train_annotated, train_sense_inventory = add_annotation_share(share_train_annot_path)
-    share_txt_test_annotated, test_sense_inventory = add_annotation_share(share_test_annot_path)
+    share_txt_train_annotated, train_sense_inventory, train_sense_inventory_invalid = add_annotation_share(share_train_annot_path)
+    share_txt_test_annotated, test_sense_inventory, test_sense_inventory_invalid = add_annotation_share(share_test_annot_path)
 
     # combine corpus
     share_txt_all_annotated = share_txt_train_annotated.copy()
     share_txt_all_annotated.extend(share_txt_test_annotated)
     all_sense_inventory = merge_inventories(train_sense_inventory, test_sense_inventory)
+    all_sense_inventory_invalid = merge_inventories(train_sense_inventory_invalid, test_sense_inventory_invalid)
 
     # save sense inventory to json
     json_writer(train_sense_inventory, share_processed_path + "/train_sense_inventory.json")
     json_writer(test_sense_inventory, share_processed_path + "/test_sense_inventory.json")
     json_writer(all_sense_inventory, share_processed_path + "/all_sense_inventory.json")
+    json_writer(all_sense_inventory_invalid, share_processed_path + "/all_sense_inventory_invalid.json")
 
     # Initialize processor and tokenizer
     processor = TextProcessor([

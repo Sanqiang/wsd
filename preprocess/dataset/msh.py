@@ -4,6 +4,7 @@ Helper functions for MSH dataset.
 """
 
 import os
+import csv
 import re
 import tqdm
 # please "pip install liac-arff" to read arff files
@@ -14,7 +15,7 @@ from preprocess.file_helper import txt_reader, txt_writer, json_writer
 
 
 # Build sense inventory
-def sense_inventory_msh(benchmark_mesh_file_path):
+def sense_inventory_msh(benchmark_mesh_file_path, abbr_list):
     inventory_file = txt_reader(benchmark_mesh_file_path)
 
     sense_inventory = {}
@@ -23,9 +24,10 @@ def sense_inventory_msh(benchmark_mesh_file_path):
         items = line.split("\t")
         abbr = items[0]
         cuis = items[1:]
-        sense_inventory[abbr] = cuis
-        if " " not in abbr:
-            sense_inventory_one_word[abbr] = cuis
+        if abbr in abbr_list:
+            sense_inventory[abbr] = cuis
+            if " " not in abbr:
+                sense_inventory_one_word[abbr] = cuis
     return sense_inventory_one_word, sense_inventory
 
 
@@ -42,6 +44,16 @@ def add_annotation_msh(sense_inventory, arff_folder_path):
     return docs_procs
 
 
+def find_abbrs(csv_file):
+    abbr_list = []
+    with open(csv_file) as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            if row['Type'] == 'A ':
+                abbr_list.append(row['Term'])
+    return abbr_list
+
+
 if __name__ == '__main__':
 
     # File paths
@@ -49,8 +61,10 @@ if __name__ == '__main__':
     msh_path = data_path + "/msh/MSHCorpus"
     msh_processed_path = data_path + "/msh/msh_processed"
 
+    abbr_list = find_abbrs(msh_path + '/12859_2010_4593_MOESM1_ESM.CSV')
+
     # Read original sense inventory (only one word abbrs)
-    MSH_sense_inventory_one_word, MSH_sense_inventory = sense_inventory_msh(msh_path+"/benchmark_mesh.txt")
+    MSH_sense_inventory_one_word, MSH_sense_inventory = sense_inventory_msh(msh_path+"/benchmark_mesh.txt", abbr_list)
 
     # save sense inventory to json
     json_writer(MSH_sense_inventory_one_word, msh_processed_path + "/MSH_sense_inventory_one_word.json")

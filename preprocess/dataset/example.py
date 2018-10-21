@@ -68,7 +68,7 @@ if __name__ == '__main__':
     data_path = "/home/luoz3/data"
     dataset_path = data_path + "/path/to/dataset"
     dataset_processed_path = data_path + "/path/to/dataset/processed"
-    os.makedirs(share_processed_path, exist_ok=True)
+    os.makedirs(dataset_processed_path, exist_ok=True)
 
     # Read or build sense inventory (only one word abbrs)
     sense_inventory = sense_inventory_dataset(data_path+"/inventory.file")

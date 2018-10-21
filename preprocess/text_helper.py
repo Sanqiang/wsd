@@ -293,38 +293,6 @@ class CoreNLPTokenizer(TextBaseHelper):
         return txt
 
 
-class AbbrInventoryBuilder(TextBaseHelper):
-    """
-    Build Abbreviation Sense Inventory from processed texts.
-    """
-    # <todo> Zhimeng: Build abbr sense inventory from processed texts for all datasets.
-    def __init__(self):
-        raise NotImplementedError
-
-    def process_single_text(self, txt):
-        raise NotImplementedError
-
-    def process_texts(self, txt_list, n_jobs=1):
-        raise NotImplementedError
-
-
-class AbbrInventory:
-    # <todo> Zhimeng: General Abbr sense inventory for all datasets.
-
-    def __init__(self):
-        self.data = {}
-        raise NotImplementedError
-
-    def overlap(self):
-        raise NotImplementedError
-
-    def load(self):
-        raise NotImplementedError
-
-    def save(self):
-        raise NotImplementedError
-
-
 ############################
 # General Helper Functions
 ############################
@@ -373,3 +341,20 @@ def recover_upper_cui(txt):
     annotate_ptn = re.compile(r"(abbr\|[\w\-/'.]+?\|)c(\d+)")
     txt = re.sub(annotate_ptn, r"\1C\2", txt)
     return txt
+
+
+def is_valid_abbr(abbr):
+    """
+    Check if abbr is valid.
+
+    :param abbr:
+    :return:
+    """
+    # filter out complicated cases
+    if len(re.split(r'[\s\[\]\{\}]+', abbr)) > 1:
+        return False
+    # filter out long forms
+    elif len(abbr) > 7 and re.fullmatch(r'\w+', abbr):
+        return False
+    else:
+        return True
