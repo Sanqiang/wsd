@@ -11,6 +11,7 @@ from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 
 from collections import defaultdict, OrderedDict
 from preprocess.file_helper import txt_writer, txt_reader, pickle_writer
+from baseline.dataset_helper import AbbrInstanceCollector, DataSetPaths
 
 
 def index_label_reader(index_list):
@@ -24,8 +25,9 @@ def index_label_reader(index_list):
         doc_pos = doc_pos.split(" ")
         temp_dict = []
         for i in doc_pos:
+            # (global_instance_idx, token_idx, sense)
             pair = i.split(":")
-            temp_dict.append((int(pair[0]), pair[1]))
+            temp_dict.append((int(pair[0]), int(pair[1]), pair[2]))
         index_dict[doc_id] = temp_dict
     return index_dict
 
@@ -103,41 +105,12 @@ class AbbrIndex:
         return new_abbr_index
 
 
-def load_dataset_corpus(file_path):
-    """
-    Load processed dataset, generate abbr index, and remove abbr marks.
-
-    :param file_path:
-    :return:
-    """
-    abbr_index = AbbrIndex()
-    txt_post_processed = []
-    for doc_idx, doc in enumerate(tqdm.tqdm(open(file_path, "r"))):
-        doc_abbr = defaultdict(list)
-        doc_processed = []
-        tokens = doc.rstrip('\n').split(" ")
-        for idx, token in enumerate(tokens):
-            if token.startswith('abbr|'):
-                _, abbr, cui = token.split('|')
-                # add abbr info to inverted index
-                doc_abbr[abbr].append(":".join([str(idx), cui]))
-                doc_processed.append(abbr)
-            else:
-                doc_processed.append(token)
-        txt_post_processed.append(" ".join(doc_processed))
-
-        # convert doc_abbr dict to string
-        for abbr, pos in doc_abbr.items():
-            abbr_index.add_posting(abbr, doc_idx, pos)
-
-    return abbr_index, txt_post_processed
-
-
 def generate_train_files(txt_path, train_processed_path):
     os.makedirs(train_processed_path, exist_ok=True)
     # Find abbrs, build abbr index
     print("Loading TRAIN data...")
-    abbr_index, train_no_mark = load_dataset_corpus(txt_path)
+    train_collector = AbbrInstanceCollector(txt_path)
+    abbr_index, train_no_mark = train_collector.generate_inverted_index()
     # save files
     txt_writer(train_no_mark, train_processed_path + '/train_no_mark.txt')
     abbr_index.save(train_processed_path + '/abbr_index_data.pkl')
@@ -161,27 +134,18 @@ def generate_test_files(txt_path, test_processed_path):
     os.makedirs(test_processed_path, exist_ok=True)
     # Find abbrs, build abbr index
     print("Loading Test data...")
-    abbr_index, test_no_mark = load_dataset_corpus(txt_path)
+    test_collector = AbbrInstanceCollector(txt_path)
+    abbr_index, test_no_mark = test_collector.generate_inverted_index()
     # save files
     txt_writer(test_no_mark, test_processed_path + '/test_no_mark.txt')
     abbr_index.save(test_processed_path + '/abbr_index_data.pkl')
 
 
 if __name__ == '__main__':
+    dataset_paths = DataSetPaths()
 
-    PATH_TRAIN = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
-    train_processed_path = '/home/luoz3/data/mimic/processed/train/'
+    generate_train_files(dataset_paths.mimic_train_txt, dataset_paths.mimic_train_folder)
 
-    PATH_EVAL = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
-    mimic_test_path = '/home/luoz3/data/mimic/processed/test/'
-    data_path = '/home/luoz3/data/'
-    msh_txt_path = data_path + 'msh/msh_processed/msh_processed.txt'
-    msh_test_path = data_path + 'msh/msh_processed/test/'
-    share_txt_path = data_path + 'share/processed/share_all_processed.txt'
-    share_test_path = data_path + 'share/processed/test/'
-
-    # generate_train_files(PATH_TRAIN, train_processed_path)
-
-    # generate_test_files(PATH_EVAL, mimic_test_path)
-    generate_test_files(msh_txt_path, msh_test_path)
-    generate_test_files(share_txt_path, share_test_path)
+    generate_test_files(dataset_paths.mimic_eval_txt, dataset_paths.mimic_test_folder)
+    generate_test_files(dataset_paths.msh_txt, dataset_paths.msh_test_folder)
+    generate_test_files(dataset_paths.share_txt, dataset_paths.share_test_folder)

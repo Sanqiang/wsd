@@ -17,7 +17,7 @@ from os.path import exists, join
 from os import makedirs, listdir, remove
 
 from model.model_config import get_args, BaseConfig
-import argparse
+from baseline.dataset_helper import DataSetPaths
 
 
 def eval(model_config, ckpt):
@@ -141,20 +141,21 @@ class TestBaseConfig(BaseConfig):
 
 
 if __name__ == '__main__':
-    data_path = '/home/luoz3/data/'
-    msh_txt_path = data_path + 'msh/msh_processed/msh_processed.txt'
-    share_txt_path = data_path + 'share/processed/share_all_processed.txt'
+    dataset_paths = DataSetPaths()
 
     args = get_args()
     if args.test_dataset == 'share':
-        test_file = share_txt_path
+        test_file = dataset_paths.share_txt
     elif args.test_dataset == 'msh':
-        test_file = msh_txt_path
+        test_file = dataset_paths.msh_txt
+    elif args.test_dataset == 'mimic:':
+        test_file = dataset_paths.mimic_eval_txt
     else:
         raise ValueError('Please type valid dataset name')
 
     # test file path
     model_config = TestBaseConfig(test_file)
+
     # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
     ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train/model/model.ckpt-20676678'
     acc = eval(model_config, ckpt)

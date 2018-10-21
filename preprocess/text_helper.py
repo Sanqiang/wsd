@@ -293,38 +293,6 @@ class CoreNLPTokenizer(TextBaseHelper):
         return txt
 
 
-class AbbrInventoryBuilder(TextBaseHelper):
-    """
-    Build Abbreviation Sense Inventory from processed texts.
-    """
-    # <todo> Zhimeng: Build abbr sense inventory from processed texts for all datasets.
-    def __init__(self):
-        raise NotImplementedError
-
-    def process_single_text(self, txt):
-        raise NotImplementedError
-
-    def process_texts(self, txt_list, n_jobs=1):
-        raise NotImplementedError
-
-
-class AbbrInventory:
-    # <todo> Zhimeng: General Abbr sense inventory for all datasets.
-
-    def __init__(self):
-        self.data = {}
-        raise NotImplementedError
-
-    def overlap(self):
-        raise NotImplementedError
-
-    def load(self):
-        raise NotImplementedError
-
-    def save(self):
-        raise NotImplementedError
-
-
 ############################
 # General Helper Functions
 ############################

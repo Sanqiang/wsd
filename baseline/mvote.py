@@ -1,45 +1,44 @@
 """Simple majority vote impl"""
-import tqdm
-from collections import Counter, defaultdict
 from preprocess.file_helper import pickle_writer, pickle_reader
-
-# # mimic v1 (deprecated)
-# PATH_TRAIN = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
-# PATH_EVAL = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
-
-PATH_TRAIN = '/exp_data/wsd_data/mimic/train'
-PATH_EVAL = '/exp_data/wsd_data/mimic/eval'
-PATH_TRAIN_COLLECTION = '/home/luoz3/data/mimic/train_abbr_collection.pkl'
-data_path = '/home/luoz3/data/'
-msh_txt_path = data_path + 'msh/msh_processed/msh_processed.txt'
-share_txt_path = data_path + 'share/processed/share_all_processed.txt'
+from baseline.dataset_helper import DataSetPaths, AbbrInstanceCollector, process_token, evaluation, InstancePred
 
 
-# Collect abbr info on training set
-def collect_train_abbr(train_path, save_collection_path=None):
-    assign_collect = defaultdict(Counter)
-    lid = 0
-    for line in open(train_path):
-        ents = [w for w in line.split() if w.startswith('abbr|')]
-        for ent in ents:
-            items = ent.split('|')
-            abbr = items[1]
-            cui = items[2]
-            assign_collect[abbr].update([cui])
-        lid += 1
-        if lid % 10000 == 0:
-            print('Processed %s lines' % lid)
+def predict_majority_vote(train_counter, test_path):
+    """
+    Make prediction using majority vote, return list of InstancePred.
 
-    if save_collection_path is not None:
-        pickle_writer(assign_collect, save_collection_path)
-    return assign_collect
+    :param train_counter:
+    :param test_path:
+    :return: list of InstancePred
+    """
+    assign_map = {}
+    for abbr in train_counter:
+        assign_map[abbr] = train_counter[abbr].most_common(1)[0][0]
+
+    instance_collection = []
+    idx = 0
+    for line in open(test_path):
+        for token in line.rstrip('\n').split(" "):
+            items = process_token(token)
+            if items is not None:
+                abbr, _, _ = items
+                if abbr in assign_map:
+                    sense_pred = assign_map[abbr]
+                else:
+                    sense_pred = None
+                instance_collection.append(InstancePred(
+                    index=idx,
+                    abbr=abbr,
+                    sense_pred=sense_pred))
+                idx += 1
+    return instance_collection
 
 
-def test_majority_vote(train_collection, test_path):
+def test_majority_vote(train_counter, test_path):
     assign_map = {}
     correct_cnt, total_cnt = 0.0, 0.0
-    for abbr in train_collection:
-        assign_map[abbr] = train_collection[abbr].most_common(1)[0][0]
+    for abbr in train_counter:
+        assign_map[abbr] = train_counter[abbr].most_common(1)[0][0]
 
     for line in open(test_path):
         ents = [w for w in line.split() if w.startswith('abbr|')]
@@ -58,98 +57,46 @@ def test_majority_vote(train_collection, test_path):
     return acc
 
 
-def build_inventory(train_collection):
-    inventory = {}
-    for abbr, items in train_collection.items():
-        inventory[abbr] = list(items)
-    return inventory
-
-
-def compare_abbr_inventory(train_inventory, test_inventory):
-    # collect CUIs
-    cuis_1 = []
-    for _, cuis in train_inventory.items():
-        cuis_1.extend(cuis)
-    cuis_1 = set(cuis_1)
-    print("No.CUIs on train: ", len(cuis_1))
-
-    cuis_2 = []
-    for _, cuis in test_inventory.items():
-        cuis_2.extend(cuis)
-    cuis_2 = set(cuis_2)
-    print("No.CUIs on test: ", len(cuis_2))
-
-    # intersection
-    print("CUI overlap ratio: ", len(cuis_1 & cuis_2)/len(cuis_2))
-
-    # collect abbr info
-    abbr_1 = set(train_inventory.keys())
-    print("No. abbrs on train: ", len(abbr_1))
-    abbr_2 = set(test_inventory.keys())
-    print("No. abbrs on test: ", len(abbr_2))
-    print("Abbr overlap ratio: ", len(abbr_1 & abbr_2)/len(abbr_2))
-
-
-def compare_mapping_instances(train_inventory_counter, test_inventory_counter):
-    train_inventory = build_inventory(train_inventory_counter)
-    count_all_instances = 0
-    count_no_abbr_instances = 0
-    count_overlap_instances = 0
-    for abbr, items in tqdm.tqdm(test_inventory_counter.items()):
-        for cui, count in items.items():
-            count_all_instances += count
-            if abbr not in train_inventory:
-                count_no_abbr_instances += count
-            elif cui in train_inventory[abbr]:
-                count_overlap_instances += count
-    return count_overlap_instances, count_all_instances, count_all_instances-count_no_abbr_instances
-
-
 if __name__ == '__main__':
+    dataset_paths = DataSetPaths()
+    train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
 
-    # process train abbr info
-    assign_collect = collect_train_abbr(PATH_TRAIN, PATH_TRAIN_COLLECTION)
+    # # process train abbr info
+    # mimic_train_collector = AbbrInstanceCollector(dataset_paths.mimic_train_txt)
+    # mimic_train_counter = mimic_train_collector.generate_counter(train_counter_path)
 
-    # test on test set
-    # assign_collect = pickle_reader(PATH_TRAIN_COLLECTION)
+    mimic_train_counter = pickle_reader(train_counter_path)
 
-    # # count number of instances in training dataset
-    # count_all_instances = 0
-    # for abbr, items in tqdm.tqdm(assign_collect.items()):
-    #     for cui, count in items.items():
-    #         count_all_instances += count
-    # print(count_all_instances)
+    #####################################
+    # testing (deprecated, but faster)
+    #####################################
+    # print("Mvote on MIMIC test: ")
+    # test_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
+    # print("Mvote on ShARe/CLEF: ")
+    # test_majority_vote(mimic_train_counter, dataset_paths.share_txt)
+    # print("Mvote on MSH: ")
+    # test_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
+
+    #####################################
+    # testing (using standard evaluation pipeline)
+    #####################################
+
+    # load test sets
+    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
 
     print("Mvote on MIMIC test: ")
-    test_majority_vote(assign_collect, PATH_EVAL)
-    print("Mvote on share: ")
-    test_majority_vote(assign_collect, share_txt_path)
-    print("Mvote on msh: ")
-    test_majority_vote(assign_collect, msh_txt_path)
+    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
+    evaluation(mimic_test_collection_true, mimic_test_collection_pred)
 
-    # intersections
-    train_inventory = build_inventory(assign_collect)
-    mimic_test_inventory = build_inventory(collect_train_abbr(PATH_EVAL))
-    share_inventory = build_inventory(collect_train_abbr(share_txt_path))
-    msh_inventory = build_inventory(collect_train_abbr(msh_txt_path))
+    print("SVM on ShARe/CLEF: ")
+    share_collection_true = share_collector.generate_instance_collection()
+    share_collection_pred = predict_majority_vote(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    evaluation(mimic_test_collection_true, mimic_test_collection_pred)
 
-    print("Intersection on MIMIC test: ")
-    compare_abbr_inventory(train_inventory, mimic_test_inventory)
-    print("Intersection on share: ")
-    compare_abbr_inventory(train_inventory, share_inventory)
-    print("Intersection on msh: ")
-    compare_abbr_inventory(train_inventory, msh_inventory)
-
-    # compare mapping instances
-    mimic_test_inventory = collect_train_abbr(PATH_EVAL)
-    share_inventory = collect_train_abbr(share_txt_path)
-    msh_inventory = collect_train_abbr(msh_txt_path)
-
-    mimic_test_overlap, mimic_test_all, mimic_test_has_abbr = compare_mapping_instances(assign_collect, mimic_test_inventory)
-    print("mimic test (all: %d, has abbr: %d, overlap: %d): %f" % (mimic_test_all, mimic_test_has_abbr, mimic_test_overlap, mimic_test_overlap/mimic_test_all))
-
-    share_overlap, share_all, share_has_abbr = compare_mapping_instances(assign_collect, share_inventory)
-    print("share (all: %d, has abbr: %d, overlap: %d): %f" % (share_all, share_has_abbr, share_overlap, share_overlap / share_all))
-
-    msh_overlap, msh_all, msh_has_abbr = compare_mapping_instances(assign_collect, msh_inventory)
-    print("msh (all: %d, has abbr: %d, overlap: %d): %f" % (msh_all, msh_has_abbr, msh_overlap, msh_overlap / msh_all))
+    print("SVM on MSH: ")
+    msh_collection_true = msh_collector.generate_instance_collection()
+    msh_collection_pred = predict_majority_vote(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    evaluation(msh_collection_true, msh_collection_pred)
