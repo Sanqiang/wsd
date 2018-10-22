@@ -92,12 +92,12 @@ if __name__ == '__main__':
     mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
     evaluation(mimic_test_collection_true, mimic_test_collection_pred)
 
-    print("SVM on ShARe/CLEF: ")
+    print("Mvote on ShARe/CLEF: ")
     share_collection_true = share_collector.generate_instance_collection()
-    share_collection_pred = predict_majority_vote(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    share_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.share_txt)
     evaluation(share_collection_true, share_collection_pred)
 
-    print("SVM on MSH: ")
+    print("Mvote on MSH: ")
     msh_collection_true = msh_collector.generate_instance_collection()
-    msh_collection_pred = predict_majority_vote(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    msh_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
     evaluation(msh_collection_true, msh_collection_pred)
