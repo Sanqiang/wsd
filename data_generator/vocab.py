@@ -6,13 +6,13 @@ class Vocab:
     def __init__(self, model_config, vocab_path=None):
         self.model_config = model_config
         self.vocab_path = vocab_path
-        # if self.model_config.subword_vocab_size <= 0:
-        #     self.init_vocab()
-        #     if vocab_path is not None:
-        #         self.populate_vocab()
-        # else:
-        if vocab_path is not None:
-            self.populate_subword_vocab()
+        if self.model_config.subword_vocab_size <= 0:
+            self.init_vocab()
+            if vocab_path is not None:
+                self.populate_vocab()
+        else:
+            if vocab_path is not None:
+                self.populate_subword_vocab()
 
 
     def populate_subword_vocab(self):
@@ -23,33 +23,28 @@ class Vocab:
     def init_vocab(self):
         self.w2i = {}
         self.i2w = []
-        self.w2i[constant.PAD] = 0
-        self.i2w.append(constant.PAD)
-        self.w2i[constant.UNK] = 1
-        self.i2w.append(constant.UNK)
-        self.w2i[constant.BOS] = 2
-        self.i2w.append(constant.BOS)
-        self.w2i[constant.EOS] = 3
-        self.i2w.append(constant.EOS)
-        self.w2i[constant.EOS] = 4
-        self.i2w.append(constant.NONTAR)
-
-        for i in range(len(self.i2w), constant.REVERED_VOCAB_SIZE):
-            reserved_vocab = 'REVERED_%i' % i
-            self.w2i[reserved_vocab] = i
-            self.i2w.append(reserved_vocab)
+        # self.w2i[constant.PAD] = 0
+        # self.i2w.append(constant.PAD)
+        # self.w2i[constant.UNK] = 1
+        # self.i2w.append(constant.UNK)
+        # self.w2i[constant.BOS] = 2
+        # self.i2w.append(constant.BOS)
+        # self.w2i[constant.BOS] = 3
+        # self.i2w.append(constant.EOS)
+        # self.w2i[constant.EOS] = 4
+        # self.i2w.append(constant.NONTAR)
 
     def populate_vocab(self, mincount=-1):
-        mincount = max(mincount, self.model_config.min_count)
+        # mincount = max(mincount, self.model_config.min_count)
 
         for line in open(self.vocab_path, encoding='utf-8'):
             items = line.strip().split('\t')
             w = items[0]
             if len(items) > 1:
                 cnt = int(items[1])
-            # else:
-            #     # Accept all words
-            #     cnt = 99999
+            else:
+                # Accept all words
+                cnt = 99999
             if cnt >= mincount:
                 self.w2i[w] = len(self.i2w)
                 self.i2w.append(w)

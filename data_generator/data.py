@@ -2,8 +2,14 @@ from data_generator.vocab import Vocab
 from util.constant import NONTAR, UNK, BOS, EOS, PAD
 import random as rd
 import os
+import numpy as np
 import pickle
 from collections import defaultdict
+import nltk
+from nltk.corpus import stopwords
+
+
+STOP_WORDS_SET = set(stopwords.words('english'))
 
 
 class Data:
@@ -14,15 +20,10 @@ class Data:
         # For Context
         self.voc = Vocab(model_config, model_config.voc_file)
 
-        if 'stype' in model_config.extra_loss:
-            self.populate_cui_stype()
-
-        if 'def' in model_config.extra_loss:
-            self.populate_cui_def()
+        if 'stype' in model_config.extra_loss or 'def' in model_config.extra_loss:
+            self.populate_cui()
 
     def populate_abbr(self):
-        self.abbr2id, self.id2abbr = {}, []
-        self.sense2id, self.id2sense = {}, []
         self.id2abbr = [abbr.strip() for abbr in
                         open(self.model_config.abbr_file).readlines()]
         self.abbr2id = dict(zip(self.id2abbr, range(len(self.id2abbr))))
@@ -31,9 +32,9 @@ class Data:
         self.sense2id = dict(zip(self.id2sense, range(len(self.id2sense))))
         self.sen_cnt = len(self.id2sense)
 
-    def populate_cui_stype(self):
+    def populate_cui(self):
         self.stype2id, self.id2stype = {}, []
-        self.id2stype = [stype.split('\t')[0]
+        self.id2stype = [stype.split('\t')[0].lower()
                          for stype in open(self.model_config.stype_voc_file).readlines()]
         self.stype2id = dict(zip(self.id2stype, range(len(self.id2stype))))
 
@@ -42,29 +43,46 @@ class Data:
             cui_extra = pickle.load(cui_file)
             for cui in cui_extra:
                 info = cui_extra[cui]
-                self.cui2stype[cui] = self.stype2id[info[1]]
+                self.cui2stype[cui] = self.stype2id[info[1].lower()]
 
-    def populate_cui_def(self):
         self.cui2def = {}
         with open(self.model_config.cui_extra_pkl, 'rb') as cui_file:
             cui_extra = pickle.load(cui_file)
             for cui in cui_extra:
                 info = cui_extra[cui]
-                definition = self.voc.encode(info[0])
+                if self.model_config.subword_vocab_size <= 0:
+                    definition = [self.voc.encode(w) for w in info[0].lower().strip().split()]
+                else:
+                    definition = self.voc.encode(info[0].lower().strip())
 
                 if len(definition) > self.model_config.max_def_len:
                     definition = definition[:self.model_config.max_def_len]
                 else:
                     num_pad = self.model_config.max_def_len - len(definition)
-                    definition.extend(self.voc.encode(PAD) * num_pad)
+                    if self.model_config.subword_vocab_size <= 0:
+                        definition.extend([self.voc.encode(PAD)] * num_pad)
+                    else:
+                        definition.extend(self.voc.encode(PAD) * num_pad)
                 assert len(definition) == self.model_config.max_def_len
                 self.cui2def[cui] = definition
+
+        np_mask = np.loadtxt(self.model_config.abbr_mask_file)
+        self.cuiud2abbrid = defaultdict(list)
+        for abbrid in range(len(self.id2abbr)):
+            cuiids = list(np.where(np_mask[abbrid] == 1)[0])
+            for cuiid in cuiids:
+                self.cuiud2abbrid[cuiid].append(abbrid)
 
     def process_line(self, line, line_id):
         contexts = []
         targets = []
         words = line.split()
-        contexts.extend(self.voc.encode(BOS))
+
+        # if self.model_config.subword_vocab_size <= 0:
+        #     contexts.append(self.voc.encode(BOS))
+        # else:
+        #     contexts.extend(self.voc.encode(BOS))
+
         for id, word in enumerate(words):
             if word.startswith('abbr|'):
                 pair = word.split('|')
@@ -85,8 +103,16 @@ class Data:
                     targets.append([id, abbr_id, sense_id, line_id])
             else:
                 wid = self.voc.encode(word)
-            contexts.extend(wid)
-        contexts.extend(self.voc.encode(EOS))
+
+            if self.model_config.subword_vocab_size <= 0:
+                contexts.append(wid)
+            else:
+                contexts.extend(wid)
+
+        # if self.model_config.subword_vocab_size <= 0:
+        #     contexts.append(self.voc.encode(EOS))
+        # else:
+        #     contexts.extend(self.voc.encode(EOS))
 
         objs = []
         window_size = int(self.model_config.max_context_len / 2)
@@ -111,7 +137,10 @@ class Data:
                 cur_contexts = cur_contexts[:self.model_config.max_context_len]
             else:
                 num_pad = self.model_config.max_context_len - len(cur_contexts)
-                cur_contexts.extend(self.voc.encode(PAD) * num_pad)
+                if self.model_config.subword_vocab_size <= 0:
+                    cur_contexts.extend([self.voc.encode(PAD)] * num_pad)
+                else:
+                    cur_contexts.extend(self.voc.encode(PAD) * num_pad)
             assert len(cur_contexts) == self.model_config.max_context_len
 
             obj = {
@@ -120,20 +149,10 @@ class Data:
                 'line': line,
             }
 
-            if self.model_config.extra_loss:
-                cui = self.id2sense[target[2]]
-                if 'def' in self.model_config.extra_loss:
-                    obj['def'] = self.cui2def[cui]
-                if 'stype' in self.model_config.extra_loss:
-                    obj['stype'] = self.cui2stype[cui]
-
             objs.append(obj)
         return objs
 
     def populate_data(self, path):
-        # if os.path.exists(self.model_config.train_pickle):
-        #     with open(self.model_config.train_pickle, 'rb') as inv_file:
-        #         self.datas = pickle.load(inv_file)
         self.datas = []
         line_id = 0
         for line in open(path):
@@ -142,9 +161,6 @@ class Data:
             line_id += 1
             if line_id % 10000 == 0:
                 print('Process %s lines.' % line_id)
-            # break
-        # with open(self.model_config.train_pickle, 'wb') as output_file:
-        #     pickle.dump(self.datas, output_file)
 
 
 class TrainData(Data):
@@ -155,6 +171,8 @@ class TrainData(Data):
             print('Finished Populate Data with %s samples.' % str(len(self.datas)))
         else:
             self.data_it = self.get_sample_it()
+            if self.model_config.extra_loss:
+                self.data_it_cui = self.get_cui_sample_it()
             self.size = self.get_size()
             print('Finished Data Iter with %s samples.' % str(self.size))
 
@@ -165,7 +183,90 @@ class TrainData(Data):
         i = rd.sample(range(len(self.datas)), 1)[0]
         return self.datas[i]
 
+    def get_cui_sample_it(self):
+        """Get feed data from cui extra (e.g. def, stype)"""
+        while True:
+            i = rd.sample(range(len(self.id2sense)), 1)[0]
+            cui = self.id2sense[i]
+            sdef = self.cui2def[cui]
+            stype = self.cui2stype[cui]
+            for abbr_id in self.cuiud2abbrid[i]:
+                obj = {
+                    'abbr_id': abbr_id,
+                    'cui_id': i,
+                    'def': sdef,
+                    'stype': stype}
+                yield obj
+
+    def prepare_data_for_masked_lm(self, line, objs):
+        if not self.model_config.lm_mask_rate:
+            return objs
+        # print('Use Masked LM with rate %s' % self.model_config.lm_mask_rate)
+
+        masked_cnt = len(objs)
+        words = line.split()
+        masked_contexts = []
+        masked_words = []
+        masked_contexts.extend(self.voc.encode(BOS))
+        masked_idxs = rd.sample(range(len(words)),
+                                1 + int(len(words) * self.model_config.lm_mask_rate))
+        for id, word in enumerate(words):
+            if word.startswith('abbr|'):
+                pair = word.split('|')
+                abbr = pair[1]
+                if 'add_abbr' in self.model_config.voc_process:
+                    wid = self.voc.encode(abbr)
+                else:
+                    wid = self.voc.encode(NONTAR)
+            else:
+                wid = self.voc.encode(word)
+            if masked_cnt and word not in STOP_WORDS_SET and not word.startswith('abbr|') and id in masked_idxs:
+                masked_contexts.extend(self.voc.encode(PAD))
+                twid = wid
+                if len(twid) > self.model_config.max_subword_len:
+                    twid = twid[:self.model_config.max_subword_len]
+                else:
+                    num_pad = self.model_config.max_subword_len - len(twid)
+                    twid.extend(self.voc.encode(PAD) * num_pad)
+                masked_words.append((id, twid))
+                masked_cnt -= 1
+            else:
+                masked_contexts.extend(wid)
+        masked_contexts.extend(self.voc.encode(EOS))
+        window_size = int(self.model_config.max_context_len / 2)
+        if not masked_words:
+            return objs
+        for i in range(len(objs)):
+            masked_word = masked_words[i % len(masked_words)]
+            step = masked_word[0]
+            extend_size = 0
+            if step < window_size:
+                left_idx = 0
+                extend_size = window_size - step
+            else:
+                left_idx = step - window_size
+
+            if step + window_size > len(masked_contexts):
+                right_idx = len(masked_contexts)
+            else:
+                right_idx = min(
+                    step + window_size + extend_size, len(masked_contexts))
+
+            cur_masked_contexts = masked_contexts[left_idx:right_idx]
+
+            if len(cur_masked_contexts) > self.model_config.max_context_len:
+                cur_masked_contexts = cur_masked_contexts[:self.model_config.max_context_len]
+            else:
+                num_pad = self.model_config.max_context_len - len(cur_masked_contexts)
+                cur_masked_contexts.extend(self.voc.encode(PAD) * num_pad)
+            assert len(cur_masked_contexts) == self.model_config.max_context_len
+
+            objs[i]['cur_masked_contexts'] = cur_masked_contexts
+            objs[i]['masked_words'] = masked_word
+        return objs
+
     def get_sample_it(self):
+        """Get ffed data from task"""
         i = 0
         f = open(self.model_config.train_file)
         while True:
@@ -180,6 +281,7 @@ class TrainData(Data):
 
             objs = self.process_line(line, i)
             if len(objs) > 0:
+                objs = self.prepare_data_for_masked_lm(line, objs)
                 for obj in objs:
                     yield obj
             i += 1
