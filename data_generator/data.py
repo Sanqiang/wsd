@@ -61,17 +61,25 @@ class Data:
                 self.cui2def[cui] = definition
 
     def process_line(self, line, line_id):
+        '''
+        Process each line and return tokens. Each line may contain multiple labels.
+        :param line:
+        :param line_id:
+        :return:
+        '''
         contexts = []
         targets = []
         words = line.split()
         contexts.extend(self.voc.encode(BOS))
-        for id, word in enumerate(words):
+        for pos_id, word in enumerate(words):
             if word.startswith('abbr|'):
                 pair = word.split('|')
                 abbr = pair[1]
                 # if abbr in self.abbrs_filterout:
                 #     continue
                 sense = pair[2]
+                longform = pair[3]
+                longform_tokens =  self.voc.encode(longform)
 
                 if 'add_abbr' in self.model_config.voc_process:
                     wid = self.voc.encode(abbr)
@@ -82,28 +90,29 @@ class Data:
                 abbr_id = self.abbr2id[abbr]
                 if sense in self.sense2id:
                     sense_id = self.sense2id[sense]
-                    targets.append([id, abbr_id, sense_id, line_id])
+                    targets.append([pos_id, abbr_id, sense_id, line_id, longform_tokens])
             else:
                 wid = self.voc.encode(word)
             contexts.extend(wid)
+
         contexts.extend(self.voc.encode(EOS))
 
-        objs = []
+        examples = []
         window_size = int(self.model_config.max_context_len / 2)
         for target in targets:
-            step = target[0]
+            pos_id = target[0]
             extend_size = 0
-            if step < window_size:
+            if pos_id < window_size:
                 left_idx = 0
-                extend_size = window_size - step
+                extend_size = window_size - pos_id
             else:
-                left_idx = step - window_size
+                left_idx = pos_id - window_size
 
-            if step + window_size > len(contexts):
+            if pos_id + window_size > len(contexts):
                 right_idx = len(contexts)
             else:
                 right_idx = min(
-                    step + window_size + extend_size, len(contexts))
+                    pos_id + window_size + extend_size, len(contexts))
 
             cur_contexts = contexts[left_idx:right_idx]
 
@@ -114,7 +123,7 @@ class Data:
                 cur_contexts.extend(self.voc.encode(PAD) * num_pad)
             assert len(cur_contexts) == self.model_config.max_context_len
 
-            obj = {
+            example = {
                 'contexts': cur_contexts,
                 'target': target,
                 'line': line,
@@ -123,15 +132,16 @@ class Data:
             if self.model_config.extra_loss:
                 cui = self.id2sense[target[2]]
                 if 'def' in self.model_config.extra_loss:
-                    obj['def'] = self.cui2def[cui]
+                    example['def'] = self.cui2def[cui]
                 if 'stype' in self.model_config.extra_loss:
-                    obj['stype'] = self.cui2stype[cui]
+                    example['stype'] = self.cui2stype[cui]
 
-            objs.append(obj)
-        return objs
+            examples.append(example)
+
+        return examples
 
     def populate_data(self, path):
-        if os.path.exists(self.model_config.train_pickle):
+        if hasattr(self.model_config, 'train_pickle') and os.path.exists(self.model_config.train_pickle):
             with open(self.model_config.train_pickle, 'rb') as inv_file:
                 self.datas = pickle.load(inv_file)
         else:
@@ -146,8 +156,8 @@ class Data:
                 if line_id % 100000 == 0:
                     print('break, only export 100000 exmaples')
                     break
-            with open(self.model_config.train_pickle, 'wb') as output_file:
-                pickle.dump(self.datas, output_file)
+            # with open(self.model_config.train_pickle, 'wb') as output_file:
+            #     pickle.dump(self.datas, output_file)
 
 
 class TrainData(Data):
@@ -181,10 +191,10 @@ class TrainData(Data):
                 i += 1
                 continue
 
-            objs = self.process_line(line, i)
-            if len(objs) > 0:
-                for obj in objs:
-                    yield obj
+            examples = self.process_line(line, i)
+            if len(examples) > 0:
+                for example in examples:
+                    yield example
             i += 1
 
 

@@ -6,6 +6,8 @@ def get_args():
     parser = argparse.ArgumentParser(description='Model Parameter')
     parser.add_argument('-mode', '--mode', default='dummy',
                         help='Mode?')
+    parser.add_argument('-arch', '--architecture', default='abbr_residual',
+                        help='Which architecture? Either context_residual, abbr_residual')
     parser.add_argument('-ngpus', '--num_gpus', default=1, type=int,
                         help='Number of GPU cards?')
     parser.add_argument('-bsize', '--batch_size', default=2, type=int,
@@ -71,7 +73,6 @@ def get_args():
     parser.add_argument('-hub_emb', '--hub_module_embedding', default='',
                         help='The hub module used for extra embedding?')
 
-
     # For Test
     parser.add_argument('-test_ckpt', '--test_ckpt', default='',
                         help='Path for test ckpt checkpoint?')
@@ -107,7 +108,9 @@ def get_path(file_path, env='sys'):
     elif env == 'luoz3':
         return '/home/luoz3/wsd_result/tmp/' + file_path
     elif env == 'mengr':
-        return '../../wsd_perf/tmp/' + file_path
+        return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
+    elif env == 'aws_mengr':
+        return '/exp_data/wsd_data/' + file_path
     else:
         return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
 
@@ -117,12 +120,14 @@ args = get_args()
 
 class DummyConfig:
     mode = args.mode
+    environment = args.environment
+    architecture = args.architecture
 
-    train_file = get_path('../wsd_data/dummy/train.txt')
-    eval_file = get_path('../wsd_data/dummy/eval.txt')
+    train_file = get_path('../wsd_data/dummy/train.txt', env=args.environment)
+    eval_file = get_path('../wsd_data/dummy/eval.txt', env=args.environment)
 
-    abbr_common_file = get_path('../wsd_data/medline/abbr_common.txt')
-    abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
+    abbr_common_file = get_path('../wsd_data/medline/abbr_common.txt', env=args.environment)
+    abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt', env=args.environment)
 
     max_context_len = args.max_context_len
     max_def_len = args.max_def_len
@@ -159,7 +164,6 @@ class DummyConfig:
     learning_rate = args.learning_rate
     batch_size = args.batch_size
     optimizer = args.optimizer
-    environment = args.environment
     num_gpus = args.num_gpus
     output_folder = args.output_folder
     resultdir = get_path('../' + output_folder + '/result/test1/', environment)
@@ -170,22 +174,22 @@ class DummyConfig:
 
 
 class BaseConfig(DummyConfig):
-    voc_file = get_path('../wsd_data/mimic/subvocab')
+    voc_file = get_path('../wsd_data/mimic/subvocab', env=args.environment)
 
-    train_file = get_path('../wsd_data/mimic/train')
+    train_file = get_path('../wsd_data/mimic/train', env=args.environment)
     # train_pickle = get_path('../wsd_data/mimic/train.pkl')
-    eval_file = get_path('../wsd_data/mimic/eval')
+    eval_file = get_path('../wsd_data/mimic/eval', env=args.environment)
 
-    abbr_file = get_path('../wsd_data/mimic/abbr')
-    cui_file = get_path('../wsd_data/mimic/cui')
-    abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask')
+    abbr_file = get_path('../wsd_data/mimic/abbr', env=args.environment)
+    cui_file = get_path('../wsd_data/mimic/cui', env=args.environment)
+    abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask', env=args.environment)
     # abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
 
-    stype_voc_file = get_path('../wsd_data/mimic/cui_extra_stype.voc')
-    cui_extra_pkl = get_path('../wsd_data/mimic/cui_extra.pkl')
+    stype_voc_file = get_path('../wsd_data/mimic/cui_extra_stype.voc', env=args.environment)
+    cui_extra_pkl = get_path('../wsd_data/mimic/cui_extra.pkl', env=args.environment)
 
-    save_model_secs = 600
-    model_print_freq = 1000
+    # save_model_secs = 600
+    # model_print_freq = 1000
 
 
 class DataSetConfig(DummyConfig):

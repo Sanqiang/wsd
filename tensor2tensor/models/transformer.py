@@ -1349,10 +1349,12 @@ def transformer_encoder_abbr(encoder_input,
               nonpadding_mask=nonpadding,
               losses=losses)
           x = common_layers.layer_postprocess(x, y, hparams)
+
     # if normalization is done in layer_preprocess, then it should also be done
     # on the output, since the output can grow very large, being the sum of
     # a whole stack of unnormalized layer outputs.
     return common_layers.layer_preprocess(x, hparams)
+
 
 def transformer_decoder(decoder_input,
                         encoder_output,

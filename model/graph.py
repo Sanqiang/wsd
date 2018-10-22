@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensor2tensor.models import transformer
+from tensor2tensor.utils.beam_search import INF
 from util import constant
 from tensor2tensor.layers import common_attention, common_layers
 import tensorflow_hub as hub
@@ -90,6 +91,7 @@ class BaseGraph:
             self.hparams.dropout = 0.0
             self.hparams.relu_dropout = 0.0
 
+
     def get_aggregate_state(self, encoder_outputs):
         if 'selfattn' in self.model_config.aggregate_mode:
             selfattn_w = tf.get_variable(
@@ -132,7 +134,7 @@ class ContextEncoder(BaseGraph):
         # add dropout to context input [batch_size, max_context_len, emb_dim]
         contexts_emb = tf.nn.dropout(contexts_emb,
                                      1.0 - self.hparams.layer_prepostprocess_dropout)
-        # get the output vector of transformer
+        # get the output vector of transformer, [batch_size, context_len, channel_dim]
         encoder_ouput = transformer.transformer_encoder_abbr(
             contexts_emb, contexts_bias, abbr_inp_emb,
             abbr_bias = tf.zeros([self.model_config.batch_size,1,1,1]),
@@ -231,6 +233,7 @@ class Graph(BaseGraph):
 
                 self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
+
     def create_model(self):
         with tf.variable_scope('variables'):
             contexts_inp = []
@@ -241,8 +244,9 @@ class Graph(BaseGraph):
             abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
             sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
 
-            # Generate mask that masks the candidate sense to be predicted as 1 and others to 0, mask embedding is a one-hot matrix of [num_abbr, num_sense]
-            # The mask is 2 dimension vector with size [batch_size, sense_size]
+            # Generate mask that masks the candidate sense to be predicted as 1 and others to 0
+            # mask embedding is a one-hot matrix of [num_abbr, num_sense]
+            # The mask is 2 dimension vector with size [batch_size, num_sense]
             mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
             if self.model_config.hub_module_embedding:
@@ -257,17 +261,23 @@ class Graph(BaseGraph):
             if 'stype' in self.model_config.extra_loss:
                 stype_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='stype_input')
 
-        with tf.variable_scope('model'):
-            context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
-
-        with tf.variable_scope('pred'):
             # tf.hub text modeling always has 512 dimension vector
             project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
+
+            # initialize sense embeddings, shape=[channel_dim, num_sense]
             sense_embs = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
-                                initializer=tf.contrib.layers.xavier_initializer())
+                                         initializer=tf.contrib.layers.xavier_initializer())
+            # bias for output layer, shape = [num_sense]
             if self.model_config.predict_mode == 'clas':
                 sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
                                              initializer=tf.contrib.layers.xavier_initializer())
+
+        with tf.variable_scope('model'):
+            # if self.model_config.architecture == 'context_residual':
+            #     create_model = self.create_model_context_residual
+            # elif self.model_config.architecture == 'abbr_residual':
+            #     create_model = self.create_model_abbr_residual
+            context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
 
             if self.model_config.abbr_mode == 'abbr':
                 # learn a new embedding for each abbr
@@ -287,11 +297,13 @@ class Graph(BaseGraph):
             # get the embedding of context words
             contexts_emb = tf.stack(context_encoder.embed_context(contexts_inp, abbr_inp_emb), axis=1)
 
-            # get the output of transformer. If mode='match', the vector is the predicted sense embedding
+            # get the output of transformer. [batch_size, context_len, channel_dim]
             encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts_inp, abbr_inp_emb)
             # encoder_outputs = transformer.transformer_encoder_addabbr(
             #     contexts_emb, contexts_emb_bias, abbr_inp_emb, self.hparams)
 
+        with tf.variable_scope('pred'):
+            # [batch_size, channel_dim], If mode='match', the vector is the predicted sense embedding
             aggregate_state = self.get_aggregate_state(encoder_outputs)
             if self.model_config.hub_module_embedding:
                 # Append embedding from hub text model
@@ -299,18 +311,38 @@ class Graph(BaseGraph):
                 aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
 
             if self.model_config.predict_mode == 'clas':
+                """
                 # Instead mask logit, mask proj_w and proj_b for efficiency
+                # here we directly use sense_embs as W, which size is [batch_size, emb_dim, num_sense/num_class]
                 proj_w_stack = tf.stack([sense_embs for _ in range(self.model_config.batch_size)], axis=0)
                 masked_proj_w = proj_w_stack * tf.expand_dims(mask, 1)
+                # proj_b_stack.shape = [batch_size, num_sense/num_class]
                 proj_b_stack = tf.stack([sense_bias for _ in range(self.model_config.batch_size)], axis=0)
                 masked_proj_b = proj_b_stack * mask
                 logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), masked_proj_w), axis=1) + masked_proj_b
                 # logits = tf.matmul(aggregate_state, proj_w) + proj_b
                 # logits *= mask
+                """
+                # here we directly use sense_embs as W,
+                # which size is [channel_dim, num_sense], after tiling [batch_size, channel_dim, num_sense]
+                proj_w = tf.tile(tf.expand_dims(sense_embs, axis=0), multiples=[self.model_config.batch_size, 1, 1])
+                # bias for output layer, which size is [num_sense], after tiling [batch_size, num_sense]
+                proj_b = tf.tile(tf.expand_dims(sense_bias, axis=0), multiples=[self.model_config.batch_size, 1])
+                # add a large negative number to mask part, [batch_size, num_sense]
+                logit_mask_bias = tf.to_float(tf.equal(mask, 0)) * -INF
+                # [batch_size, 1, channel_dim] * [batch_size, emb_dim, num_sense] = [batch_size, 1, num_sense]
+                # sequeeze([batch_size, 1, num_sense], axis=1) = [batch_size, num_sense]
+                logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), proj_w), axis=1)\
+                         + proj_b + logit_mask_bias
+
             elif self.model_config.predict_mode == 'match':
+                # predicted sense embedding [batch_size, embed_dim, 1]
                 aggregate_state_exp = tf.expand_dims(aggregate_state, axis=-1)
+                # mask out senses that are not relevant to current abbr_inp
                 mask_exp = tf.expand_dims(mask, 1)
+                # [batch_size, embed_dim, num_senses]
                 cur_embs = tf.expand_dims(sense_embs, 0) * mask_exp
+                # target logit is the dot-product of predicted sense embedding and real sense embedding, [batch_size, num_sense]
                 logits = tf.reduce_sum(
                     cur_embs * tf.tile(
                         aggregate_state_exp, [1, 1, self.data.sen_cnt]),
@@ -325,6 +357,7 @@ class Graph(BaseGraph):
                     # TODO(sanqiang): ptr logit
                     print('Use Ptr Network with first attn distribution.')
 
+            # , loss.shape=[batch_size], logits.shape=[batch_size, num_class], sense_inp.shape=[batch_size]
             loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
             loss_mask = tf.to_float(tf.not_equal(sense_inp, 0))
             loss *= loss_mask

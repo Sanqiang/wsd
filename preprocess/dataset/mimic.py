@@ -166,12 +166,13 @@ def longform_replacer_job(idxs, txt_list, sense_list, txt_queue, rmapper):
         for sense in senses:
             longform = sense.lower()
             if longform in rmapper:
+                # rmapper[longform][0] is abbr, rmapper[longform][1] is CUI
                 txt = re.sub(
                     r'\b' + longform + r'\b',
                     ' abbr|%s|%s|%s ' % (
-                        rmapper[longform][0],
+                        '_'.join(rmapper[longform][0].split('\W+')),
                         rmapper[longform][1],
-                        '_'.join(longform.split())
+                        '_'.join(longform.split('\W+'))
                     ),
                     txt)
         txt_queue.put((idx, txt))
@@ -220,8 +221,8 @@ if __name__ == '__main__':
     ######################################
     # Read texts from dataset
     ######################################
-    BASE_FOLDER = '/home/mengr/Project/wsd/wsd_data/'
-    # BASE_FOLDER = '/Users/memray/Project/upmc_wsd/wsd_data/'
+    # BASE_FOLDER = '/home/mengr/Project/wsd/wsd_data/'
+    BASE_FOLDER = '/Users/memray/Project/upmc_wsd/wsd_data/'
 
     PATH_FOLDER = BASE_FOLDER + 'mimic/find_longform_mimic/'
     PATH_FOLDER_PROCESSED = BASE_FOLDER + 'mimic/processed/'
@@ -273,12 +274,12 @@ if __name__ == '__main__':
 
         # pre-processing
         mimic_txt = processor.process_texts(mimic_txt, n_jobs=30)
+        # Replace Long forms to abbrs
+        mimic_txt_processed = longform_replacer(mimic_txt_filtered, mimic_present_senses, inventory_rmapper, n_jobs=16)
         # tokenizing
         mimic_txt_tokenized = toknizer.process_texts(mimic_txt, n_jobs=40)
         # Filter trivial tokens
         mimic_txt_filtered = filter_processor.process_texts(mimic_txt_tokenized, n_jobs=40)
-        # Replace Long forms to abbrs
-        mimic_txt_processed = longform_replacer(mimic_txt_filtered, mimic_present_senses, inventory_rmapper, n_jobs=16)
         # Remove repeat non-words
         mimic_txt_processed = remove_repeat_processor.process_texts(mimic_txt_processed, n_jobs=40)
         # Save to file

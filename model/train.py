@@ -7,7 +7,7 @@ import time
 import numpy as np
 
 from model.model_config import get_args
-
+from model.model_config import DummyConfig, BaseConfig
 
 args = get_args()
 
@@ -18,34 +18,34 @@ def get_feed(objs, data, model_config, is_train):
     for obj in objs:
         tmp_contexts, tmp_targets, tmp_lines = [], [], []
         tmp_extra_cui_def, tmp_extra_cui_stype = [], []
-        cnt = 0
-        while cnt < model_config.batch_size:
+        example_count = 0
+        while example_count < model_config.batch_size:
             if is_train:
                 if model_config.it_train:
-                    sample = next(data.data_it)
+                    example = next(data.data_it)
                 else:
-                    sample = data.get_sample()
+                    example = data.get_sample()
             else:
-                sample = data.get_sample()
-                if sample is None:
+                example = data.get_sample()
+                if example is None:
                     # Only used in evaluation
-                    sample = {}
-                    sample['contexts'] = [0] * model_config.max_context_len
-                    sample['target'] = [0, 0, 0, 0]
-                    sample['line'] = ''
-                    sample['def'] = [0] * model_config.max_def_len
-                    sample['stype'] = 0
+                    example = {}
+                    example['contexts'] = [0] * model_config.max_context_len
+                    example['target'] = [0, 0, 0, 0]
+                    example['line'] = ''
+                    example['def'] = [0] * model_config.max_def_len
+                    example['stype'] = 0
                     exclude_cnt += 1 # Assume eval use single GPU
 
-            tmp_contexts.append(sample['contexts'])
-            tmp_targets.append(sample['target'])
-            tmp_lines.append(sample['line'])
+            tmp_contexts.append(example['contexts'])
+            tmp_targets.append(example['target'])
+            tmp_lines.append(example['line'])
 
             if 'def' in model_config.extra_loss:
-                tmp_extra_cui_def.append(sample['def'])
+                tmp_extra_cui_def.append(example['def'])
             if 'stype' in model_config.extra_loss:
-                tmp_extra_cui_stype.append(sample['stype'])
-            cnt += 1
+                tmp_extra_cui_stype.append(example['stype'])
+            example_count += 1
 
         for step in range(model_config.max_context_len):
             input_feed[obj['contexts'][step].name] = [
@@ -137,7 +137,6 @@ def train(model_config):
 
 
 if __name__ == '__main__':
-    from model.model_config import DummyConfig, BaseConfig
     if args.mode == 'dummy':
         train(DummyConfig())
     elif args.mode == 'base':
