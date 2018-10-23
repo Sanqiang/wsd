@@ -207,13 +207,13 @@ def evaluation(instance_collection_true, instance_collection_pred):
     count_correct, count_total = 0.0, 0.0
     for instance_true, instance_pred in zip(instance_collection_true, instance_collection_pred):
         assert instance_true.index == instance_pred.index
-        assert instance_true.abbr == instance_pred.abbr
         if instance_true.sense == instance_pred.sense_pred:
             count_correct += 1.0
         count_total += 1.0
 
     acc = count_correct / count_total
     print('Accuray = %s' % acc)
+    print()
     return acc
 
 

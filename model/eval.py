@@ -14,6 +14,8 @@ from os import makedirs, listdir, remove
 
 from model.model_config import get_args
 
+import sys
+sys.path.insert(0,'/zfs1/hdaqing/saz31/wsd/wsd_code')
 
 args = get_args()
 
@@ -120,7 +122,7 @@ if __name__ == '__main__':
                 else:
                     return None
 
-    from model.model_config import DummyConfig, BaseConfig
+    from model.model_config import DummyConfig, BaseConfig, VocBaseConfig
     if args.mode == 'dummy':
         model_config = DummyConfig()
         best_acc = get_best_acc(model_config)
@@ -140,6 +142,23 @@ if __name__ == '__main__':
                         remove(fl)
     elif args.mode == 'base':
         model_config = BaseConfig()
+        best_acc = get_best_acc(model_config)
+        while True:
+            ckpt = get_ckpt(model_config.modeldir, model_config.logdir)
+            if ckpt:
+                acc = eval(model_config, ckpt)
+                if acc > best_acc:
+                    best_acc = acc
+                    write_best_acc(model_config, best_acc)
+                    for file in listdir(model_config.modeldir):
+                        step = ckpt[ckpt.rindex('model.ckpt-') + len('model.ckpt-'):-1]
+                        if step not in file:
+                            remove(model_config.modeldir + file)
+                else:
+                    for fl in glob.glob(ckpt + '*'):
+                        remove(fl)
+    elif args.mode == 'voc':
+        model_config = VocBaseConfig()
         best_acc = get_best_acc(model_config)
         while True:
             ckpt = get_ckpt(model_config.modeldir, model_config.logdir)

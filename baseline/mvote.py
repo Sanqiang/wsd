@@ -34,7 +34,7 @@ def predict_majority_vote(train_counter, test_path):
     return instance_collection
 
 
-def test_majority_vote(train_counter, test_path):
+def evaluate_score_majority_vote(train_counter, test_path):
     assign_map = {}
     correct_cnt, total_cnt = 0.0, 0.0
     for abbr in train_counter:
@@ -54,6 +54,7 @@ def test_majority_vote(train_counter, test_path):
 
     acc = correct_cnt / total_cnt
     print('Accuray = %s' % acc)
+    print()
     return acc
 
 
@@ -68,14 +69,14 @@ if __name__ == '__main__':
     mimic_train_counter = pickle_reader(train_counter_path)
 
     #####################################
-    # testing (deprecated, but faster)
+    # testing (directly compute score, not using standard pipeline)
     #####################################
     # print("Mvote on MIMIC test: ")
-    # test_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
+    # evaluate_score_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
     # print("Mvote on ShARe/CLEF: ")
-    # test_majority_vote(mimic_train_counter, dataset_paths.share_txt)
+    # evaluate_score_majority_vote(mimic_train_counter, dataset_paths.share_txt)
     # print("Mvote on MSH: ")
-    # test_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
+    # evaluate_score_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
 
     #####################################
     # testing (using standard evaluation pipeline)
@@ -91,12 +92,12 @@ if __name__ == '__main__':
     mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
     evaluation(mimic_test_collection_true, mimic_test_collection_pred)
 
-    print("SVM on ShARe/CLEF: ")
+    print("Mvote on ShARe/CLEF: ")
     share_collection_true = share_collector.generate_instance_collection()
-    share_collection_pred = predict_majority_vote(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    evaluation(mimic_test_collection_true, mimic_test_collection_pred)
+    share_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.share_txt)
+    evaluation(share_collection_true, share_collection_pred)
 
-    print("SVM on MSH: ")
+    print("Mvote on MSH: ")
     msh_collection_true = msh_collector.generate_instance_collection()
-    msh_collection_pred = predict_majority_vote(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    msh_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
     evaluation(msh_collection_true, msh_collection_pred)
