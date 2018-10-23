@@ -60,6 +60,7 @@ def predict_transformer(model_config, ckpt, true_instance_collection):
             break
     # sort collection list based on global instance idx
     instance_collection_pred = sorted(instance_collection_pred, key=lambda x: x.index)
+    # add non-including instances
     instance_collection = []
     temp_idx = 0
     for idx in range(len(true_instance_collection)):
