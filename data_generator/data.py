@@ -73,7 +73,7 @@ class Data:
             for cuiid in cuiids:
                 self.cuiud2abbrid[cuiid].append(abbrid)
 
-    def process_line(self, line, line_id):
+    def process_line(self, line, line_id, inst_id):
         contexts = []
         targets = []
         words = line.split()
@@ -100,7 +100,8 @@ class Data:
                 abbr_id = self.abbr2id[abbr]
                 if sense in self.sense2id:
                     sense_id = self.sense2id[sense]
-                    targets.append([id, abbr_id, sense_id, line_id])
+                    targets.append([id, abbr_id, sense_id, line_id, inst_id])
+                inst_id += 1 # global instance id increment
             else:
                 wid = self.voc.encode(word)
 
@@ -150,17 +151,19 @@ class Data:
             }
 
             objs.append(obj)
-        return objs
+        return objs, inst_id
 
     def populate_data(self, path):
         self.datas = []
         line_id = 0
+        inst_id = 0
         for line in open(path):
-            objs = self.process_line(line, line_id)
+            objs, inst_id = self.process_line(line, line_id, inst_id)
             self.datas.extend(objs)
             line_id += 1
             if line_id % 10000 == 0:
                 print('Process %s lines.' % line_id)
+        print('Finished processing with inst:%s' % inst_id)
 
 
 class TrainData(Data):
@@ -279,7 +282,7 @@ class TrainData(Data):
                 i += 1
                 continue
 
-            objs = self.process_line(line, i)
+            objs, _ = self.process_line(line, i, 0) # inst_id ignores in training
             if len(objs) > 0:
                 objs = self.prepare_data_for_masked_lm(line, objs)
                 for obj in objs:

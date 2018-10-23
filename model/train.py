@@ -35,7 +35,7 @@ def get_feed(objs, data, model_config, is_train):
                     # Only used in evaluation
                     sample = {}
                     sample['contexts'] = [0] * model_config.max_context_len
-                    sample['target'] = [0, 0, 0, 0]
+                    sample['target'] = [0, 0, 0, 0, -1]
                     sample['line'] = ''
                     # sample['def'] = [0] * model_config.max_def_len
                     # sample['stype'] = 0

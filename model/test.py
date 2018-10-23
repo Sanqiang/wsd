@@ -64,10 +64,11 @@ def eval(model_config, ckpt):
 
             abbr_id = gt_target[1]
 
-            report.append('Abbr:%s\tPred:%s\tGt:%s\tline:%s with step %s with loss %s.' %
+            report.append('Abbr:%s\tPred:%s\tGt:%s\tline:%s\tinst id:%s with step %s with loss %s.' %
                           (data.id2abbr[abbr_id],
                            ';'.join([data.id2sense[loop] for loop in pred]),
-                           data.id2sense[gt_target[2]], gt_target[3], gt_target[0], losses_eval[batch_id]))
+                           data.id2sense[gt_target[2]], gt_target[3], gt_target[0], gt_target[4],
+                           losses_eval[batch_id]))
             report.append('')
 
         if exclude_cnt > 0:
