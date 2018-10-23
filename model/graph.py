@@ -90,7 +90,7 @@ class BaseGraph:
             self.hparams.dropout = 0.0
             self.hparams.relu_dropout = 0.0
 
-        if self.model_config.encoder_mode == 'ut2t':
+        if self.model_config.encoder_mode == 'ut2t' or self.model_config.encoder_mode == 'abbr_ut2t':
             # hparams for universal t2t
             self.hparams = universal_transformer.update_hparams_for_universal_transformer(self.hparams)
             self.hparams.recurrence_type = "act"
@@ -137,13 +137,36 @@ class ContextEncoder(BaseGraph):
             encoder_ouput = transformer.transformer_encoder(
                 contexts_emb, contexts_bias, self.hparams,
                 save_weights_to=weights)
+            extra_loss = None
         elif self.model_config.encoder_mode == 'ut2t':
-            encoder_ouput, _ = universal_transformer_util.universal_transformer_encoder(
+            encoder_ouput, extra_output = universal_transformer_util.universal_transformer_encoder(
                 contexts_emb, contexts_bias, self.hparams,
                 save_weights_to=weights)
+            enc_ponder_times, enc_remainders = extra_output
+            extra_loss = (
+                    self.hparams.act_loss_weight *
+                    tf.reduce_mean(enc_ponder_times + enc_remainders))
+        elif self.model_config.encoder_mode == 'abbr_ut2t':
+            encoder_ouput, extra_output = universal_transformer_util.universal_transformer_encoder(
+                contexts_emb, contexts_bias, self.hparams,
+                save_weights_to=weights)
+            enc_ponder_times, enc_remainders = extra_output
+            extra_loss = (
+                    self.hparams.act_loss_weight *
+                    tf.reduce_mean(enc_ponder_times + enc_remainders))
+
+            encoder_ouput2, extra_output2 = universal_transformer_util.universal_transformer_decoder(
+                abbr_inp_emb, encoder_ouput,
+                tf.zeros([self.model_config.batch_size,1,1,1]), contexts_bias, self.hparams)
+            enc_ponder_times2, enc_remainders2 = extra_output2
+            extra_loss2 = (
+                    self.hparams.act_loss_weight *
+                    tf.reduce_mean(enc_ponder_times2 + enc_remainders2))
+            extra_loss += extra_loss2
+
         else:
             raise ValueError('Unknow encoder_mode.')
-        return encoder_ouput, weights
+        return encoder_ouput, weights, extra_loss
 
 
 # TODO(sanqiang): PTR
@@ -321,7 +344,7 @@ class Graph(BaseGraph):
                 abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
                 contexts_emb = tf.stack(context_encoder.embed_context(contexts), axis=1)
 
-                encoder_outputs, weights = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
+                encoder_outputs, weights, extra_loss = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
                 bias_mask = tf.to_float(tf.not_equal(tf.stack(contexts, axis=1), self.data.voc.encode(constant.PAD)))
                 aggregate_state = self.get_aggregate_state(encoder_outputs, bias_mask)
                 if self.model_config.hub_module_embedding:
@@ -342,17 +365,20 @@ class Graph(BaseGraph):
 
                 loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
 
+                if extra_loss is not None:
+                    loss += extra_loss
+
                 if self.model_config.lm_mask_rate:
                     tf.get_variable_scope().reuse_variables()
                     masked_contexts_emb = tf.stack(context_encoder.embed_context(masked_contexts), axis=1)
-                    masked_contexts_outputs, _ = context_encoder.context_encoder(masked_contexts_emb, masked_contexts)
+                    masked_contexts_outputs, _, _ = context_encoder.context_encoder(masked_contexts_emb, masked_contexts)
                     masked_contexts_output = self.get_aggregate_state(
                         masked_contexts_outputs, tf.to_float(
                             tf.not_equal(tf.stack(masked_contexts, axis=1), self.data.voc.encode(constant.PAD))))
 
                     tf.get_variable_scope().reuse_variables()
                     masked_words_emb = tf.stack(context_encoder.embed_context(masked_words), axis=1)
-                    masked_words_outputs, _ = context_encoder.context_encoder(masked_words_emb, masked_words)
+                    masked_words_outputs, _, _ = context_encoder.context_encoder(masked_words_emb, masked_words)
                     masked_words_output = self.get_aggregate_state(
                         masked_words_outputs, tf.to_float(
                             tf.not_equal(tf.stack(masked_words, axis=1), self.data.voc.encode(constant.PAD))))
