@@ -34,21 +34,21 @@ def get_feed(objs, data, model_config, is_train):
                 example = data.get_sample()
                 if example is None:
                     # Only used in evaluation
-                    sample = {}
-                    sample['contexts'] = [0] * model_config.max_context_len
-                    sample['target'] = [0, 0, 0, 0]
-                    sample['line'] = ''
+                    example = {}
+                    example['contexts'] = [0] * model_config.max_context_len
+                    example['target'] = [0, 0, 0, 0]
+                    example['line'] = ''
                     # sample['def'] = [0] * model_config.max_def_len
                     # sample['stype'] = 0
                     exclude_cnt += 1 # Assume eval use single GPU
 
-            tmp_contexts.append(sample['contexts'])
-            tmp_targets.append(sample['target'])
-            tmp_lines.append(sample['line'])
+            tmp_contexts.append(example['contexts'])
+            tmp_targets.append(example['target'])
+            tmp_lines.append(example['line'])
             # print('input:\t%s\t%s.' % (sample['line'], sample['target']))
-            if model_config.lm_mask_rate and 'cur_masked_contexts' in sample:
-                tmp_masked_contexts.append(sample['cur_masked_contexts'])
-                tmp_masked_words.append(sample['masked_words'])
+            if model_config.lm_mask_rate and 'cur_masked_contexts' in example:
+                tmp_masked_contexts.append(example['cur_masked_contexts'])
+                tmp_masked_words.append(example['masked_words'])
 
             cnt += 1
 
@@ -176,6 +176,8 @@ def train(model_config):
             partial_restore_ckpt = slim.assign_from_checkpoint_fn(
                 ckpt_path, available_vars,
                 ignore_missing_vars=True, reshape_variables=False)
+
+    print('Start training')
 
     with tf.train.MonitoredTrainingSession(
         checkpoint_dir=model_config.logdir,

@@ -6,6 +6,8 @@ def get_args():
     parser = argparse.ArgumentParser(description='Model Parameter')
     parser.add_argument('-mode', '--mode', default='dummy',
                         help='Mode?')
+    parser.add_argument('-arch', '--architecture', default='abbr_encdec',
+                        help='Which architecture? Either context_enc, abbr_encdec')
     parser.add_argument('-ngpus', '--num_gpus', default=1, type=int,
                         help='Number of GPU cards?')
     parser.add_argument('-bsize', '--batch_size', default=2, type=int,
@@ -76,6 +78,8 @@ def get_args():
                         help='Number of hidden layer?')
     parser.add_argument('-nel', '--num_encoder_layers', default=2, type=int,
                         help='Number of encoder layer?')
+    parser.add_argument('-ndl', '--num_decoder_layers', default=2, type=int,
+                        help='Number of decoder layer?')
     parser.add_argument('-nh', '--num_heads', default=2, type=int,
                         help='Number of multi-attention heads?')
     parser.add_argument('-hub_emb', '--hub_module_embedding', default='',
@@ -169,6 +173,7 @@ class DummyConfig():
     num_heads = args.num_heads
     num_hidden_layers = args.num_hidden_layers
     num_encoder_layers = args.num_encoder_layers
+    num_decoder_layers = args.num_decoder_layers
     hparams_pos = args.hparams_pos
     enc_postprocess = args.enc_postprocess.split(':')
 
@@ -188,7 +193,7 @@ class DummyConfig():
     environment = args.environment
     num_gpus = args.num_gpus
     output_folder = args.output_folder
-    resultdir = get_path('../' + output_folder + '/result/test1/', environment)
+    resultdir = get_path('../' + output_folder + '/result/', environment)
     modeldir = get_path('../' + output_folder + '/model/', environment)
     logdir = get_path('../' + output_folder + '/log/', environment)
 

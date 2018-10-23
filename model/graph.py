@@ -180,6 +180,56 @@ class ContextEncoder(BaseGraph):
         return encoder_ouput, weights, extra_loss
 
 
+class AbbrEncoderDecoder(BaseGraph):
+    def __init__(self, is_train, model_config, data, embs):
+        BaseGraph.__init__(self, is_train, model_config, data)
+        self.embs = embs
+
+    def embed_context(self, contexts):
+        with tf.variable_scope('context_embed'):
+            contexts_emb = self.embedding_fn(contexts, self.embs)
+            return contexts_emb
+
+    def context_encoder(self, contexts_emb, contexts, abbr_inp_emb, longform_emb=None):
+        """
+
+        :param contexts_emb: [batch_size, context_len, emb_dim]
+        :param contexts: a list of tensors of words, [batch_size] * context_len
+        :param abbr_inp_emb: [batch_size, 1, emb_dim]
+        :param longform_emb: [batch_size, longform_len, emb_dim]
+        :return:
+        """
+        saved_weights = {}
+        extra_loss = None
+
+        contexts_bias = common_attention.attention_bias_ignore_padding(
+            tf.to_float(tf.equal(tf.stack(contexts, axis=1),
+                                 self.data.voc.encode(constant.PAD))))
+
+        contexts_emb = tf.nn.dropout(contexts_emb,
+                                     1.0 - self.hparams.layer_prepostprocess_dropout)
+        abbr_inp_emb = tf.nn.dropout(abbr_inp_emb,
+                                     1.0 - self.hparams.layer_prepostprocess_dropout)
+
+        # [batch_size, context_len, emb_dim]
+        encoder_output = transformer.transformer_encoder(
+            contexts_emb, contexts_bias,
+            hparams=self.hparams,
+            save_weights_to=saved_weights)
+
+        # [batch_size, 1, emb_dim]
+        decoder_output = transformer.transformer_decoder(
+            abbr_inp_emb, encoder_output,
+            decoder_self_attention_bias=tf.zeros([self.model_config.batch_size,1,1,1]),
+            encoder_decoder_attention_bias=contexts_bias,
+            hparams=self.hparams,
+            save_weights_to=saved_weights)
+        # [batch_size, 1, 1, emb_dim]
+        decoder_output = tf.expand_dims(decoder_output, 2)
+
+        return decoder_output, saved_weights, extra_loss
+
+
 # TODO(sanqiang): PTR
 class PointerNetwork(BaseGraph):
     def __init__(self, is_train, model_config, data, weights, contexts):
@@ -293,18 +343,7 @@ class Graph(BaseGraph):
                 cand_mask)
             logits = tf.squeeze(tf.matmul(tf.expand_dims(query_vector, axis=1), proj_w_stack),
                                 axis=1) + proj_b_stack
-            """
-            proj_w = tf.tile(tf.expand_dims(sense_embs, axis=0), multiples=[self.model_config.batch_size, 1, 1])
-            # bias for output layer, which size is [num_sense], after tiling [batch_size, num_sense]
-            proj_b = tf.tile(tf.expand_dims(sense_bias, axis=0), multiples=[self.model_config.batch_size, 1])
-            # add a large negative number to mask part, [batch_size, num_sense]
-            logit_mask_bias = tf.to_float(tf.equal(mask, 0)) * -INF
-            # [batch_size, 1, channel_dim] * [batch_size, emb_dim, num_sense] = [batch_size, 1, num_sense]
-            # sequeeze([batch_size, 1, num_sense], axis=1) = [batch_size, num_sense]
-            logits = tf.squeeze(tf.matmul(tf.expand_dims(aggregate_state, axis=1), proj_w), axis=1) \
-                     + proj_b + logit_mask_bias
-            raise NotImplementedError('CLAS mode is not finished')
-            """
+
         elif self.model_config.predict_mode == 'match':
             aggregate_state_exp = tf.expand_dims(query_vector, axis=-1)
             cur_embs = tf.expand_dims(self.sense_embs, 0)
@@ -312,8 +351,10 @@ class Graph(BaseGraph):
                 cur_embs * tf.tile(
                     aggregate_state_exp, [1, 1, self.data.sen_cnt]), 1)
             logits = entry_stop_gradients(logits, cand_mask)
+
         else:
             raise ValueError("Unsupported prediction mode.")
+
         return logits
 
     def create_model(self):
@@ -353,12 +394,19 @@ class Graph(BaseGraph):
                 mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
             with tf.variable_scope('model'):
-                context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
+                if self.model_config.architecture == 'context_enc':
+                    context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
+                elif self.model_config.architecture == 'abbr_encdec':
+                    context_encoder = AbbrEncoderDecoder(self.is_train, self.model_config, self.data, self.embs)
+                else:
+                    raise ValueError('Unknown arch name: %s' % self.model_config.architecture)
 
             with tf.variable_scope('pred'):
                 if self.model_config.abbr_mode == 'abbr':
+                    # [batch_size, emb_dim]
                     abbr_inp_emb = self.embedding_fn(abbr_inp, self.abbr_embs)
                 elif self.model_config.abbr_mode == 'sense':
+                    # TODO looks not correct, abbr_inp_emb.shape = [1, emb_dim] instead of [batch_size, emb_dim]
                     sense_weight = tf.get_variable('sense_weight',
                                                    [1, 1, self.data.sen_cnt], tf.float32,
                                                    initializer=tf.contrib.layers.xavier_initializer())
@@ -366,12 +414,15 @@ class Graph(BaseGraph):
                 else:
                     raise ValueError('Unsupported abbr mode.')
 
+                # [batch_size, 1, emb_dim]
                 abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
+                # [batch_size, context_len, emb_dim]
                 contexts_emb = tf.stack(context_encoder.embed_context(contexts), axis=1)
 
                 encoder_outputs, weights, extra_loss = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
                 bias_mask = tf.to_float(tf.not_equal(tf.stack(contexts, axis=1), self.data.voc.encode(constant.PAD)))
                 aggregate_state = self.get_aggregate_state(encoder_outputs, bias_mask)
+
                 if self.model_config.hub_module_embedding:
                     # Append embedding from hub text model
                     embed_hub_state = self.embed_hub_module(text_input)
