@@ -17,7 +17,59 @@ from os.path import exists, join
 from os import makedirs, listdir, remove
 
 from model.model_config import get_args, BaseConfig
-from baseline.dataset_helper import DataSetPaths
+from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceCollector, evaluation
+
+
+def predict_transformer(model_config, ckpt, true_instance_collection):
+    """
+    Make prediction using transformer, return list of InstancePred.
+
+    :param model_config:
+    :param ckpt:
+    :return:
+    """
+    # Eval only uses single GPU
+    assert model_config.num_gpus == 1
+
+    data = EvalData(model_config)
+    graph = Graph(False, model_config, data)
+    tf.reset_default_graph()
+    graph.create_model_multigpu()
+    sess = tf.train.MonitoredTrainingSession(
+        checkpoint_dir=model_config.logdir,
+        config=get_session_config()
+    )
+    graph.saver.restore(sess, ckpt)
+    instance_collection_pred = []
+
+    while True:
+        input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, model_config, False)
+        fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
+                   graph.perplexity, graph.losses_eval]
+        preds, loss, step, perplexity, losses_eval = sess.run(fetches, input_feed)
+
+        for batch_id in range(model_config.batch_size - exclude_cnt):
+            gt_target = gt_targets[batch_id]
+            pred = preds[batch_id]
+            instance_collection_pred.append(InstancePred(
+                index=gt_target[0],
+                abbr=data.id2abbr[gt_target[1]],
+                sense_pred=data.id2sense[pred[0]]))
+
+        if exclude_cnt > 0:
+            break
+    # sort collection list based on global instance idx
+    instance_collection_pred = sorted(instance_collection_pred, key=lambda x: x.index)
+    instance_collection = []
+    temp_idx = 0
+    for idx in range(len(true_instance_collection)):
+        temp_instance_pred = instance_collection_pred[temp_idx]
+        if temp_instance_pred.index == idx:
+            instance_collection.append(temp_instance_pred)
+            temp_idx += 1
+        else:
+            instance_collection.append(InstancePred(index=idx, abbr=None, sense_pred=None))
+    return instance_collection
 
 
 def eval(model_config, ckpt):
@@ -158,6 +210,18 @@ if __name__ == '__main__':
     model_config = TestBaseConfig(test_file)
 
     # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
-    ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train/model/model.ckpt-20676678'
-    acc = eval(model_config, ckpt)
-    write_best_acc(model_config, acc)
+    ckpt = '/exp_data/20181021_base_abbrabbr/model/model.ckpt-4070595'
+
+    # #####################################
+    # # testing (directly compute score, not using standard pipeline)
+    # #####################################
+    # acc = eval(model_config, ckpt)
+    # write_best_acc(model_config, acc)
+
+    #####################################
+    # testing (using standard evaluation pipeline)
+    #####################################
+    test_collector = AbbrInstanceCollector(test_file)
+    test_true = test_collector.generate_instance_collection()
+    test_pred = predict_transformer(model_config, ckpt, test_true)
+    evaluation(test_true, test_pred)

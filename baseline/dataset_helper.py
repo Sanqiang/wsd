@@ -65,7 +65,7 @@ class AbbrInstanceCollector:
         """
         instance_collection = []
         global_instance_idx = 0
-        for line in tqdm.tqdm(self.corpus):
+        for line in self.corpus:
             for token in line.split(" "):
                 items = process_token(token)
                 if items is not None:
@@ -90,7 +90,7 @@ class AbbrInstanceCollector:
         :return:
         """
         dataset_counter = defaultdict(Counter)
-        for line in tqdm.tqdm(self.corpus):
+        for line in self.corpus:
             for token in line.split(" "):
                 items = process_token(token)
                 if items is not None:
