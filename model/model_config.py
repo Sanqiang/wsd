@@ -201,9 +201,9 @@ class DummyConfig():
 
 class BaseConfig(DummyConfig):
     learning_rate = args.learning_rate
-    subword_vocab_size = 8000
+    subword_vocab_size = 50000
 
-    voc_file = get_path('../wsd_data/mimic/subvocab')
+    voc_file = get_path('../wsd_data/mimic/subvocab_50000')
 
     train_file = get_path('../wsd_data/mimic/train')
     # train_pickle = get_path('../wsd_data/mimic/train.pkl')

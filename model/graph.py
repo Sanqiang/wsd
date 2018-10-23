@@ -107,8 +107,12 @@ class BaseGraph:
                 initializer=tf.contrib.layers.xavier_initializer())
             weight = tf.nn.tanh(tf.nn.conv1d(encoder_outputs, selfattn_w, 1, 'SAME') + selfattn_b)
             encoder_outputs *= weight
-        aggregate_state = tf.reduce_sum(encoder_outputs*bias_mask, axis=1)
-        aggregate_state /= bias_cnt
+
+        if self.model_config.encoder_mode == 'abbr_ut2t':
+            aggregate_state = tf.reduce_sum(encoder_outputs, axis=1)
+        else:
+            aggregate_state = tf.reduce_sum(encoder_outputs*bias_mask, axis=1)
+            aggregate_state /= bias_cnt
         return aggregate_state
 
 
