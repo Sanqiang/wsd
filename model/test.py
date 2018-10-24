@@ -1,11 +1,11 @@
 """
 Test on test datasets.
 """
-from tensorflow.python.keras._impl.keras.utils import Progbar
+from tensorflow.keras.utils import Progbar
 
 from data_generator.data import TrainData, EvalData
 from model.graph import Graph
-from model.train import get_feed, get_session_config
+from model.utils import get_feed, get_session_config
 from util.checkpoint import copy_ckpt_to_modeldir
 
 import tensorflow as tf
@@ -28,7 +28,7 @@ def predict_from_model(sess, graph, data, data_config, test_true):
     step = 0
 
     while True:
-        input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, data_config, False)
+        input_feed, exclude_cnt, gt_targets, end_flag = get_feed(graph.objs, data, data_config, False)
         fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
                    graph.perplexity, graph.losses_eval]
         preds, loss, _, perplexity, losses_eval = sess.run(fetches, input_feed)
@@ -110,7 +110,6 @@ def predict_from_checkpoint(model_config, ckpt):
     tf.reset_default_graph()
     graph.create_model_multigpu()
     sess = tf.train.MonitoredTrainingSession(
-        checkpoint_dir=model_config.logdir,
         config=get_session_config()
     )
     graph.saver.restore(sess, ckpt)
@@ -249,8 +248,8 @@ if __name__ == '__main__':
 
     # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
     # ckpt_path = '/exp_data/20181021_base_abbrabbr/model/model.ckpt-4070595'
-    ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-1'
-
+    # ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-26491'
+    ckpt_path = '/Users/memray/Project/upmc_wsd/wsd_perf/1020_clas/log/model.ckpt-2455'
     # #####################################
     # # testing (directly compute score, not using standard pipeline)
     # #####################################

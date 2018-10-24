@@ -182,14 +182,14 @@ class TrainData(Data):
             self.populate_data(self.model_config.train_file)
             print('Finished Populate Data with %s samples.' % str(len(self.datas)))
         else:
-            self.data_it = self.get_sample_it()
+            self.data_it = self.get_sample_it(self.model_config.train_file)
             if self.model_config.extra_loss:
                 self.data_it_cui = self.get_cui_sample_it()
-            self.size = self.get_size()
+            self.size = self.get_size(self.model_config.train_file)
             print('Finished Data Iter with %s samples.' % str(self.size))
 
-    def get_size(self):
-        return len(open(self.model_config.train_file, encoding='utf-8').readlines())
+    def get_size(self, data_file):
+        return len(open(data_file, encoding='utf-8').readlines())
 
     def get_sample(self):
         i = rd.sample(range(len(self.datas)), 1)[0]
@@ -277,10 +277,10 @@ class TrainData(Data):
             objs[i]['masked_words'] = masked_word
         return objs
 
-    def get_sample_it(self):
+    def get_sample_it(self, data_file):
         """Get ffed data from task"""
         i = 0
-        f = open(self.model_config.train_file)
+        f = open(data_file, 'r')
         while True:
             if i >= self.size:
                 i = 0
@@ -300,8 +300,8 @@ class TrainData(Data):
 
 
 class EvalData(TrainData):
-    def __init__(self, train_data, model_config):
-        self.model_config = model_config
+    def __init__(self, train_data, data_config):
+        self.model_config = data_config
 
         # Abbr
         abbr_attributes = ['id2abbr', 'abbr2id', 'id2sense', 'sense2id', 'sen_cnt']
@@ -312,9 +312,10 @@ class EvalData(TrainData):
         for attribute in  abbr_attributes + context_attributes + cui_attributes:
             setattr(self, attribute, getattr(train_data, attribute, None))
 
-        self.data_it = self.get_sample_it()
-        self.size = self.get_size()
+        self.data_it = self.get_sample_it(self.model_config.eval_file)
+        self.size = self.get_size(self.model_config.eval_file)
         print('Finished Data Iter with %s samples.' % str(self.size))
 
-    def get_size(self):
-        return len(open(self.model_config.eval_file, encoding='utf-8').readlines())
+
+    def get_size(self, data_file):
+        return len(open(data_file, encoding='utf-8').readlines())
