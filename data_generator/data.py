@@ -73,7 +73,7 @@ class Data:
             for cuiid in cuiids:
                 self.cuiud2abbrid[cuiid].append(abbrid)
 
-    def process_line(self, line, line_id):
+    def process_line(self, line, line_id, inst_id):
         '''
         Process each line and return tokens. Each line may contain multiple labels.
         :param line:
@@ -89,7 +89,7 @@ class Data:
         # else:
         #     contexts.extend(self.voc.encode(BOS))
 
-        for pos_id, word in enumerate(words):
+        for id, word in enumerate(words):
             if word.startswith('abbr|'):
                 pair = word.split('|')
                 abbr = pair[1]
@@ -108,7 +108,8 @@ class Data:
                 abbr_id = self.abbr2id[abbr]
                 if sense in self.sense2id:
                     sense_id = self.sense2id[sense]
-                    targets.append([pos_id, abbr_id, sense_id, line_id, longform_tokens])
+                    targets.append([id, abbr_id, sense_id, line_id, inst_id, longform_tokens])
+                    inst_id += 1  # global instance id increment
             else:
                 wid = self.voc.encode(word)
 
@@ -159,17 +160,19 @@ class Data:
 
             examples.append(example)
 
-        return examples
+        return examples, inst_id
 
     def populate_data(self, path):
         self.datas = []
         line_id = 0
+        inst_id = 0
         for line in open(path):
-            objs = self.process_line(line, line_id)
+            objs, inst_id = self.process_line(line, line_id, inst_id)
             self.datas.extend(objs)
             line_id += 1
             if line_id % 10000 == 0:
                 print('Process %s lines.' % line_id)
+        print('Finished processing with inst:%s' % inst_id)
 
 
 class TrainData(Data):
@@ -288,7 +291,7 @@ class TrainData(Data):
                 i += 1
                 continue
 
-            examples = self.process_line(line, i)
+            examples, _ = self.process_line(line, i, 0) # inst_id is ignored in training
             if len(examples) > 0:
                 examples = self.prepare_data_for_masked_lm(line, examples)
                 for example in examples:
@@ -296,20 +299,22 @@ class TrainData(Data):
             i += 1
 
 
-class EvalData(Data):
-    def __init__(self, model_config):
-        Data.__init__(self, model_config)
-        self.populate_data(self.model_config.eval_file)
-        self.i = 0
-        print('Finished Populate Data with %s samples.' % str(len(self.datas)))
+class EvalData(TrainData):
+    def __init__(self, train_data, model_config):
+        self.model_config = model_config
 
-    def get_sample(self):
-        if self.i < len(self.datas):
-            data = self.datas[self.i]
-            self.i += 1
-            return data
-        else:
-            return None
+        # Abbr
+        abbr_attributes = ['id2abbr', 'abbr2id', 'id2sense', 'sense2id', 'sen_cnt']
+        # Context
+        context_attributes = ['voc']
+        # CUI
+        cui_attributes = ['stype2id', 'id2stype', 'cui2stype', 'cui2def']
+        for attribute in  abbr_attributes + context_attributes + cui_attributes:
+            setattr(self, attribute, getattr(train_data, attribute, None))
 
-    def reset(self):
-        self.i = 0
+        self.data_it = self.get_sample_it()
+        self.size = self.get_size()
+        print('Finished Data Iter with %s samples.' % str(self.size))
+
+    def get_size(self):
+        return len(open(self.model_config.eval_file, encoding='utf-8').readlines())

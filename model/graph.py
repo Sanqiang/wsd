@@ -114,8 +114,12 @@ class BaseGraph:
                 initializer=tf.contrib.layers.xavier_initializer())
             weight = tf.nn.tanh(tf.nn.conv1d(encoder_outputs, selfattn_w, 1, 'SAME') + selfattn_b)
             encoder_outputs *= weight
-        aggregate_state = tf.reduce_sum(encoder_outputs * bias_mask, axis=1)
-        aggregate_state /= bias_cnt
+
+        if self.model_config.encoder_mode == 'abbr_ut2t':
+            aggregate_state = tf.reduce_sum(encoder_outputs, axis=1)
+        else:
+            aggregate_state = tf.reduce_sum(encoder_outputs*bias_mask, axis=1)
+            aggregate_state /= bias_cnt
         return aggregate_state
 
 
@@ -136,6 +140,10 @@ class ContextEncoder(BaseGraph):
         :param contexts: a list of [max_context_len, batch_size]
         :param abbr_inp_emb: a tensor of [batch_size, context_len, emb_dim], in transformer_abbr_encoder
         :return:
+            encoder_output: [batch_size, context_len, channel_dim]
+            weights: a list of multihead weights, num_layer elements,
+                     each of which is [batch_size, num_head, context_len, context_len]
+            extra_loss: None
         """
         weights = {}
         # Create an bias tensor as mask (big neg values for padded part), input=[batch_size, context_len], output=[batch_size, 1, 1, context_len]
@@ -151,12 +159,12 @@ class ContextEncoder(BaseGraph):
         #     tf.zeros([self.model_config.batch_size,1,1,1]), self.hparams,
         #     save_weights_to=weights)
         if self.model_config.encoder_mode == 't2t':
-            encoder_ouput = transformer.transformer_encoder(
+            encoder_output = transformer.transformer_encoder(
                 contexts_emb, contexts_bias, self.hparams,
                 save_weights_to=weights)
             extra_loss = None
         elif self.model_config.encoder_mode == 'ut2t':
-            encoder_ouput, extra_output = universal_transformer_util.universal_transformer_encoder(
+            encoder_output, extra_output = universal_transformer_util.universal_transformer_encoder(
                 contexts_emb, contexts_bias, self.hparams,
                 save_weights_to=weights)
             enc_ponder_times, enc_remainders = extra_output
@@ -164,7 +172,7 @@ class ContextEncoder(BaseGraph):
                     self.hparams.act_loss_weight *
                     tf.reduce_mean(enc_ponder_times + enc_remainders))
         elif self.model_config.encoder_mode == 'abbr_ut2t':
-            encoder_ouput, extra_output = universal_transformer_util.universal_transformer_encoder(
+            encoder_output, extra_output = universal_transformer_util.universal_transformer_encoder(
                 contexts_emb, contexts_bias, self.hparams,
                 save_weights_to=weights)
             enc_ponder_times, enc_remainders = extra_output
@@ -173,7 +181,7 @@ class ContextEncoder(BaseGraph):
                     tf.reduce_mean(enc_ponder_times + enc_remainders))
 
             encoder_ouput2, extra_output2 = universal_transformer_util.universal_transformer_decoder(
-                abbr_inp_emb, encoder_ouput,
+                abbr_inp_emb, encoder_output,
                 tf.zeros([self.model_config.batch_size,1,1,1]), contexts_bias, self.hparams)
             enc_ponder_times2, enc_remainders2 = extra_output2
             extra_loss2 = (
@@ -184,7 +192,7 @@ class ContextEncoder(BaseGraph):
         else:
             raise ValueError('Unknow encoder_mode.')
 
-        return encoder_ouput, weights, extra_loss
+        return encoder_output, weights, extra_loss
 
 
 class AbbrEncoderDecoder(BaseGraph):
@@ -529,6 +537,7 @@ class Graph(BaseGraph):
             obj['masked_contexts'] = masked_contexts
 
         return loss, obj
+
 
     def create_model_cui(self):
         assert self.model_config.extra_loss

@@ -1,4 +1,7 @@
+from tensorflow.python.keras._impl.keras.utils import Progbar
+
 from data_generator.data import TrainData
+from dataset_helper import DataSetPaths
 from model.graph import Graph
 
 import tensorflow as tf
@@ -12,6 +15,9 @@ from model.model_config import get_args
 from model.model_config import DummyConfig, BaseConfig, VocBaseConfig
 
 import sys
+
+from model.test import evaluate_on_testsets
+
 sys.path.insert(0,'/zfs1/hdaqing/saz31/wsd/wsd_code')
 
 args = get_args()
@@ -25,6 +31,22 @@ def get_feed(objs, data, model_config, is_train):
         tmp_masked_contexts, tmp_masked_words = [], []
         cnt = 0
         while cnt < model_config.batch_size:
+            if model_config.it_train:
+                example = next(data.data_it)
+            else:
+                example = data.get_sample()
+
+            if example is None:
+                # Only used in evaluation
+                example = {}
+                example['contexts'] = [0] * model_config.max_context_len
+                example['target'] = [0, 0, 0, 0, -1]
+                example['line'] = ''
+                # sample['def'] = [0] * model_config.max_def_len
+                # sample['stype'] = 0
+                exclude_cnt += 1  # Assume eval use single GPU
+
+            '''
             if is_train:
                 if model_config.it_train:
                     example = next(data.data_it)
@@ -36,12 +58,12 @@ def get_feed(objs, data, model_config, is_train):
                     # Only used in evaluation
                     example = {}
                     example['contexts'] = [0] * model_config.max_context_len
-                    example['target'] = [0, 0, 0, 0]
+                    example['target'] = [0, 0, 0, 0, -1]
                     example['line'] = ''
                     # sample['def'] = [0] * model_config.max_def_len
                     # sample['stype'] = 0
                     exclude_cnt += 1 # Assume eval use single GPU
-
+            '''
             tmp_contexts.append(example['contexts'])
             tmp_targets.append(example['target'])
             tmp_lines.append(example['line'])
@@ -150,9 +172,9 @@ def list_config(config):
 
 def train(model_config):
     print(list_config(model_config))
-    data = TrainData(model_config)
+    train_data = TrainData(model_config)
 
-    graph = Graph(True, model_config, data)
+    graph = Graph(True, model_config, train_data)
     graph.create_model_multigpu()
     print('Built Model Done!')
 
@@ -192,6 +214,7 @@ def train(model_config):
         else:
             ckpt = tf.train.get_checkpoint_state(model_config.logdir)
             if ckpt:
+                print('Loading previous checkpoint from: %s' % model_config.logdir)
                 graph.saver.restore(sess, ckpt.model_checkpoint_path)
 
         if model_config.init_emb:
@@ -203,30 +226,36 @@ def train(model_config):
         previous_step = 0
         previous_step_cui = 0
         while True:
+            progbar = Progbar(target=train_data.size)
             # Train task
             for _ in range(model_config.task_iter_steps):
-                input_feed, _, _ = get_feed(graph.objs, data, model_config, True)
+                input_feed, _, _ = get_feed(graph.objs, train_data, model_config, True)
                 fetches = [graph.train_op, graph.increment_global_step_task, graph.increment_global_step,
                            graph.global_step_task,
                            graph.perplexity,
                            graph.loss]
+
                 _, _, _, step, perplexity, loss = sess.run(fetches, input_feed)
                 perplexitys.append(perplexity)
+
+                progbar.update(current=step * model_config.batch_size, values=[('loss', loss), ('ppl', perplexity)])
 
                 if (step - previous_step) > model_config.model_print_freq:
                     end_time = datetime.now()
                     time_span = end_time - start_time
                     start_time = end_time
-                    print('TASK: Perplexity:\t%f at step %d using %s with loss:%s.'
+                    print('TASK: Perplexity:\t%f at step=%d using %s with loss=%s.'
                           % (perplexity, step, time_span,
                              np.mean(loss)))
                     perplexitys.clear()
                     previous_step = step
 
+                instance_collections = evaluate_on_testsets(sess, graph, train_data)
+
             # Fine tune CUI
             if model_config.extra_loss:
                 for _ in range(model_config.cui_iter_steps):
-                    input_feed = get_feed_cui(graph.obj_cui, data, model_config)
+                    input_feed = get_feed_cui(graph.obj_cui, train_data, model_config)
                     fetches = [graph.train_op_cui, graph.increment_global_step_cui, graph.increment_global_step,
                                graph.global_step_cui,
                                graph.perplexity_cui,

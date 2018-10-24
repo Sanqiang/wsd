@@ -5,6 +5,8 @@ Helper functions for processed DataSet files.
 
 import tqdm
 from collections import Counter, defaultdict, namedtuple
+
+from model.model_config import get_path
 from preprocess.file_helper import pickle_writer, txt_reader, pickle_reader
 
 
@@ -12,23 +14,24 @@ class DataSetPaths:
     """
     Paths of DataSets
     """
-    data_path = '/home/luoz3/data/'
+    def __init__(self, environment):
+        # data_path = '/home/luoz3/data/'
 
-    # DataSet Corpus files
-    mimic_train_txt = '/exp_data/wsd_data/mimic/train'
-    mimic_eval_txt = '/exp_data/wsd_data/mimic/eval'
-    # # mimic v1 (deprecated)
-    # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
-    # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
+        # DataSet Corpus files
+        self.mimic_train_txt = get_path('../wsd_data/mimic/train', env=environment)
+        self.mimic_eval_txt = get_path('../wsd_data/mimic/eval', env=environment)
+        # # mimic v1 (deprecated)
+        # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
+        # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 
-    share_txt = data_path + 'share/processed/share_all_processed.txt'
-    msh_txt = data_path + 'msh/msh_processed/msh_processed.txt'
+        self.share_txt = get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
+        self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)
 
-    # paths for processed files
-    mimic_train_folder = data_path + 'mimic/processed/train/'
-    mimic_test_folder = data_path + 'mimic/processed/test/'
-    share_test_folder = data_path + 'share/processed/test/'
-    msh_test_folder = data_path + 'msh/msh_processed/test/'
+        # paths for processed files
+        self.mimic_train_folder = get_path('../wsd_data/mimic/processed/train/', env=environment)
+        self.mimic_test_folder = get_path('../wsd_data/mimic/processed/test/', env=environment)
+        self.share_test_folder = get_path('../wsd_data/share/processed/test/', env=environment)
+        self.msh_test_folder = get_path('../wsd_data/msh/msh_processed/test/', env=environment)
 
 
 def process_token(token):
@@ -65,7 +68,7 @@ class AbbrInstanceCollector:
         """
         instance_collection = []
         global_instance_idx = 0
-        for line in tqdm.tqdm(self.corpus):
+        for line in self.corpus:
             for token in line.split(" "):
                 items = process_token(token)
                 if items is not None:
@@ -90,7 +93,7 @@ class AbbrInstanceCollector:
         :return:
         """
         dataset_counter = defaultdict(Counter)
-        for line in tqdm.tqdm(self.corpus):
+        for line in self.corpus:
             for token in line.split(" "):
                 items = process_token(token)
                 if items is not None:

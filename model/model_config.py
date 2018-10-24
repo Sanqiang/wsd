@@ -48,8 +48,8 @@ def get_args():
                         help='Max of subword length?')
     parser.add_argument('-vprocess', '--voc_process', default='',
                         help='Preprocess of vocab?')
-    parser.add_argument('-it', '--it_train', default=False, type=bool,
-                        help='Iteractive Processing Data?')
+    parser.add_argument('-it', '--it_train', default=True, type=bool,
+                        help='Iterative Processing Data?')
 
     # For Graph
     parser.add_argument('-dim', '--dimension', default=32, type=int,
