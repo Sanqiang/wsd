@@ -795,9 +795,9 @@ def set_is_in_testset(sense_inventory_dict, testset_cui_set):
     return sense_inventory_dict
 
 if __name__ == '__main__':
-    """
     # load UMLS
-    umls_sense_inventory_dict, umls_longform_cui_dict = load_umls_senses()
+    # umls_sense_inventory_dict, umls_longform_cui_dict = load_umls_senses()
+    """
     # load MEDLINE
     _, medline_longform_sense_dict, _ = load_medline_abbr_dict()
     # load senses from testsets (only the CUIs that appear in UMLS)

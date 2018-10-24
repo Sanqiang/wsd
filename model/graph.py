@@ -96,7 +96,14 @@ class BaseGraph:
             self.hparams.recurrence_type = "act"
 
     def get_aggregate_state(self, encoder_outputs, bias_mask):
+        '''
+        Obtain the predicted abbr embedding by aggregating the final context states
+        :param encoder_outputs: [batch_size, abbr_len=1, emb_dim]
+        :param bias_mask: [batch_size, context_len]
+        :return:
+        '''
         bias_cnt = 1.0 + tf.expand_dims(tf.reduce_sum(bias_mask, axis=-1), axis=-1)
+        # [batch_size, context_len, 1]
         bias_mask = tf.expand_dims(bias_mask, axis=-1)
         if 'selfattn' in self.model_config.aggregate_mode:
             selfattn_w = tf.get_variable(
@@ -107,7 +114,7 @@ class BaseGraph:
                 initializer=tf.contrib.layers.xavier_initializer())
             weight = tf.nn.tanh(tf.nn.conv1d(encoder_outputs, selfattn_w, 1, 'SAME') + selfattn_b)
             encoder_outputs *= weight
-        aggregate_state = tf.reduce_sum(encoder_outputs*bias_mask, axis=1)
+        aggregate_state = tf.reduce_sum(encoder_outputs * bias_mask, axis=1)
         aggregate_state /= bias_cnt
         return aggregate_state
 
@@ -127,7 +134,7 @@ class ContextEncoder(BaseGraph):
 
         :param contexts_emb: a tensor of [batch_size, max_context_len, emb_dim]
         :param contexts: a list of [max_context_len, batch_size]
-        :param abbr_inp_emb: a tensor of [batch_size, num_abbr=1, emb_dim]
+        :param abbr_inp_emb: a tensor of [batch_size, context_len, emb_dim], in transformer_abbr_encoder
         :return:
         """
         weights = {}
@@ -190,14 +197,14 @@ class AbbrEncoderDecoder(BaseGraph):
             contexts_emb = self.embedding_fn(contexts, self.embs)
             return contexts_emb
 
-    def context_encoder(self, contexts_emb, contexts, abbr_inp_emb, longform_emb=None):
+    def forward(self, contexts_emb, contexts, abbr_inp_emb, longform_emb=None):
         """
-
         :param contexts_emb: [batch_size, context_len, emb_dim]
         :param contexts: a list of tensors of words, [batch_size] * context_len
         :param abbr_inp_emb: [batch_size, 1, emb_dim]
         :param longform_emb: [batch_size, longform_len, emb_dim]
         :return:
+               decoder_output: predicted abbr embedding, [batch_size, 1, emb_dim]
         """
         saved_weights = {}
         extra_loss = None
@@ -220,12 +227,10 @@ class AbbrEncoderDecoder(BaseGraph):
         # [batch_size, 1, emb_dim]
         decoder_output = transformer.transformer_decoder(
             abbr_inp_emb, encoder_output,
-            decoder_self_attention_bias=tf.zeros([self.model_config.batch_size,1,1,1]),
+            decoder_self_attention_bias=tf.zeros([self.model_config.batch_size, 1, 1, 1]),
             encoder_decoder_attention_bias=contexts_bias,
             hparams=self.hparams,
             save_weights_to=saved_weights)
-        # [batch_size, 1, 1, emb_dim]
-        decoder_output = tf.expand_dims(decoder_output, 2)
 
         return decoder_output, saved_weights, extra_loss
 
@@ -326,8 +331,26 @@ class Graph(BaseGraph):
                 self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
     def get_logits(self, query_vector, cand_mask):
+        '''
+        Get the logits by either 1) classification, with a linear layer (Wx+b)
+         or 2) matching, with a sense-matching module (x*sense/(|x|*|sense|))
+
+         Note that we extensively use tf.stop_gradient() to block gradient flows
+         of irrelevant senses by masking specific entries
+        :param query_vector: [batch_size, abbr_len=1, emb_dim]
+        :param cand_mask: [batch_size, num_sense], a mask where candidate sense to be predicted is 1 and others is 0
+        :return:
+        '''
         def entry_stop_gradients(target, mask):
-            # Copied from https://stackoverflow.com/questions/43364985/how-to-stop-gradient-for-some-entry-of-a-tensor-in-tensorflow
+            '''
+            Copied from https://stackoverflow.com/questions/43364985/how-to-stop-gradient-for-some-entry-of-a-tensor-in-tensorflow
+            Mask the gradients of specific entries from target
+            :param target: input tensor
+            :param mask: matrix mask, 1 denotes to which entry I would like to apply gradient,
+                         0 denotes to which entry I don't want to apply gradient(set gradient to 0)
+            :return:
+                a tensor whose shape and value is same to target, but only entries where mask value is 1 are allowed to apply gradient
+            '''
             mask_inverse = tf.abs(mask - 1)
             return tf.stop_gradient(mask_inverse * target) + mask * target
 
@@ -341,10 +364,17 @@ class Graph(BaseGraph):
             proj_b_stack = entry_stop_gradients(
                 tf.stack([self.sense_bias for _ in range(self.model_config.batch_size)], axis=0),
                 cand_mask)
-            logits = tf.squeeze(tf.matmul(tf.expand_dims(query_vector, axis=1), proj_w_stack),
-                                axis=1) + proj_b_stack
+            # logit = Wx+b, [batch_size, num_sense]
+            logits = tf.squeeze(tf.matmul(query_vector, proj_w_stack), axis=1) + proj_b_stack
+
+            # add a large negative number to masked part, [batch_size, num_sense]
+            mask_inverse = tf.abs(cand_mask - 1) * -1e12
+            logits = logits + mask_inverse
 
         elif self.model_config.predict_mode == 'match':
+            # TODO(@rui,sanqiang), (1) divide module to make it a real cosine similarity
+            #  (2) as it is distance, only consider the gradient from matching sense
+            #       and ignore the non-matching ones, to only pushing similar ones closer
             aggregate_state_exp = tf.expand_dims(query_vector, axis=-1)
             cur_embs = tf.expand_dims(self.sense_embs, 0)
             logits = tf.reduce_sum(
@@ -365,7 +395,9 @@ class Graph(BaseGraph):
                     contexts.append(
                         tf.zeros(self.model_config.batch_size, tf.int32, name='context_input'))
 
+                # [batch_size], input abbr token id
                 abbr_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='abbr_input')
+                # [batch_size], target sense label
                 sense_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='sense_input')
 
                 if self.model_config.hub_module_embedding:
@@ -394,14 +426,6 @@ class Graph(BaseGraph):
                 mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
 
             with tf.variable_scope('model'):
-                if self.model_config.architecture == 'context_enc':
-                    context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
-                elif self.model_config.architecture == 'abbr_encdec':
-                    context_encoder = AbbrEncoderDecoder(self.is_train, self.model_config, self.data, self.embs)
-                else:
-                    raise ValueError('Unknown arch name: %s' % self.model_config.architecture)
-
-            with tf.variable_scope('pred'):
                 if self.model_config.abbr_mode == 'abbr':
                     # [batch_size, emb_dim]
                     abbr_inp_emb = self.embedding_fn(abbr_inp, self.abbr_embs)
@@ -414,26 +438,44 @@ class Graph(BaseGraph):
                 else:
                     raise ValueError('Unsupported abbr mode.')
 
-                # [batch_size, 1, emb_dim]
-                abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
-                # [batch_size, context_len, emb_dim]
-                contexts_emb = tf.stack(context_encoder.embed_context(contexts), axis=1)
+                if self.model_config.architecture == 'context_enc':
+                    context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
+                    # [batch_size, 1, emb_dim]
+                    abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
+                    # [batch_size, context_len, emb_dim]
+                    contexts_emb = tf.stack(context_encoder.embed_context(contexts), axis=1)
 
-                encoder_outputs, weights, extra_loss = context_encoder.context_encoder(contexts_emb, contexts, abbr_inp_emb)
-                bias_mask = tf.to_float(tf.not_equal(tf.stack(contexts, axis=1), self.data.voc.encode(constant.PAD)))
-                aggregate_state = self.get_aggregate_state(encoder_outputs, bias_mask)
+                    # [batch_size, 1, emb_dim]
+                    encoder_outputs, weights, extra_loss = context_encoder.context_encoder(contexts_emb, contexts,
+                                                                                           abbr_inp_emb)
+                    # [batch_size, context_len], a mask tensor in which real word is 1, PAD is 0
+                    bias_mask = tf.to_float(
+                        tf.not_equal(tf.stack(contexts, axis=1), self.data.voc.encode(constant.PAD)))
 
-                if self.model_config.hub_module_embedding:
-                    # Append embedding from hub text model
-                    embed_hub_state = self.embed_hub_module(text_input)
-                    aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
+                    aggregate_state = self.get_aggregate_state(encoder_outputs, bias_mask)
 
-                logits = self.get_logits(aggregate_state, mask)
-                # add a large negative number to mask part, [batch_size, num_sense]
-                mask_inverse = tf.abs(mask - 1) * -1e12
-                # [batch_size, 1, channel_dim] * [batch_size, emb_dim, num_sense] = [batch_size, 1, num_sense]
-                # sequeeze([batch_size, 1, num_sense], axis=1) = [batch_size, num_sense]
-                logits = logits + mask_inverse
+                    if self.model_config.hub_module_embedding:
+                        # Append embedding from hub text model
+                        embed_hub_state = self.embed_hub_module(text_input)
+                        aggregate_state = tf.concat([aggregate_state, embed_hub_state], axis=-1)
+
+                    output_layer_input = aggregate_state
+
+                elif self.model_config.architecture == 'abbr_encdec':
+                    context_encoder = AbbrEncoderDecoder(self.is_train, self.model_config, self.data, self.embs)
+                    # [batch_size, 1, emb_dim]
+                    abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
+                    # [batch_size, context_len, emb_dim]
+                    contexts_emb = tf.stack(context_encoder.embed_context(contexts), axis=1)
+                    # [batch_size, 1, emb_dim]
+                    abbr_output, weights, extra_loss = context_encoder.forward(contexts_emb, contexts,
+                                                                                           abbr_inp_emb)
+                    output_layer_input = abbr_output
+                else:
+                    raise ValueError('Unknown arch name: %s' % self.model_config.architecture)
+
+            with tf.variable_scope('pred'):
+                logits = self.get_logits(output_layer_input, mask)
 
                 if self.model_config.pointer_mode:
                     ptr_network = PointerNetwork(self.is_train, self.model_config, self.data, weights, contexts)
