@@ -127,11 +127,11 @@ class BaseGraph:
 
 
 class ContextEncoder():
-    def __init__(self, embs, voc, model_config, hparam):
+    def __init__(self, embs, voc, model_config, hparams):
         self.embs = embs
         self.voc = voc
         self.model_config = model_config
-        self.hparam = hparam
+        self.hparams = hparams
 
     def embed_context(self, contexts):
         with tf.variable_scope('context_embed'):
@@ -201,11 +201,11 @@ class ContextEncoder():
 
 
 class AbbrEncoderDecoder():
-    def __init__(self, embs, voc, model_config, hparam):
+    def __init__(self, embs, voc, model_config, hparams):
         self.embs = embs
         self.voc = voc
         self.model_config = model_config
-        self.hparam = hparam
+        self.hparams = hparams
 
     def embed_context(self, contexts):
         with tf.variable_scope('context_embed'):
@@ -276,8 +276,8 @@ class Graph(BaseGraph):
 
     def create_model_multigpu(self):
         with tf.device('/cpu:0'):
-            losses = []
-            data_feeds = []
+            self.losses = []
+            self.data_feeds = []
             optim = get_optim(self.model_config)
 
             with tf.variable_scope('shared'):
@@ -325,8 +325,8 @@ class Graph(BaseGraph):
                             loss, data_feed = self.create_model()
                             print('Built Model for GPU%s' % gpu_id)
                             tf.get_variable_scope().reuse_variables()
-                            losses.append(loss)
-                            data_feeds.append(data_feed)
+                            self.losses.append(loss)
+                            self.data_feeds.append(data_feed)
 
             with tf.device('/gpu:0'):
                 # Add graph for cui
@@ -334,7 +334,7 @@ class Graph(BaseGraph):
                     self.create_model_cui()
 
             with tf.variable_scope('optimization'):
-                self.loss = tf.divide(tf.add_n(losses), self.model_config.num_gpus)
+                self.loss = tf.divide(tf.add_n(self.losses), self.model_config.num_gpus)
                 self.perplexity = tf.exp(tf.reduce_mean(self.loss))
 
                 if self.is_train:
@@ -342,7 +342,7 @@ class Graph(BaseGraph):
                     self.increment_global_step_task = tf.assign_add(
                         self.global_step_task, 1)
                 else:
-                    self.losses_eval = losses[0] # In eval, single cpu/gpu is used.
+                    self.losses_eval = self.losses[0] # In eval, single cpu/gpu is used.
 
                 self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
@@ -479,7 +479,7 @@ class Graph(BaseGraph):
                     output_layer_input = aggregate_state
 
                 elif self.model_config.architecture == 'abbr_encdec':
-                    context_encoder = AbbrEncoderDecoder(self.embs, self.data.voc, self.model_config, self.hparam)
+                    context_encoder = AbbrEncoderDecoder(self.embs, self.data.voc, self.model_config, self.hparams)
                     # [batch_size, 1, emb_dim]
                     abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
                     # [batch_size, context_len, emb_dim]

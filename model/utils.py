@@ -1,11 +1,11 @@
 import tensorflow as tf
 
 
-def get_feed(objs, data, model_config, is_train):
+def get_feed(data_feeds, data, model_config, is_train):
     input_feed = {}
     exclude_cnt = 0
 
-    for obj in objs:
+    for data_feed in data_feeds:
         tmp_contexts, tmp_targets, tmp_lines = [], [], []
         tmp_masked_contexts, tmp_masked_words = [], []
         cnt = 0
@@ -56,20 +56,20 @@ def get_feed(objs, data, model_config, is_train):
             cnt += 1
 
         for step in range(model_config.max_context_len):
-            input_feed[obj['contexts'][step].name] = [
+            input_feed[data_feed['contexts'][step].name] = [
                 tmp_contexts[batch_idx][step]
                 for batch_idx in range(model_config.batch_size)]
 
         if model_config.hub_module_embedding:
-            input_feed[obj['text_input'].name] = [
+            input_feed[data_feed['text_input'].name] = [
                 tmp_lines[batch_idx]
                 for batch_idx in range(model_config.batch_size)]
 
-        input_feed[obj['abbr_inp'].name] = [
+        input_feed[data_feed['abbr_inp'].name] = [
             tmp_targets[batch_idx][1]
             for batch_idx in range(model_config.batch_size)
         ]
-        input_feed[obj['sense_inp'].name] = [
+        input_feed[data_feed['sense_inp'].name] = [
             tmp_targets[batch_idx][2]
             for batch_idx in range(model_config.batch_size)
         ]
@@ -82,12 +82,12 @@ def get_feed(objs, data, model_config, is_train):
                 i += 1
 
             for step in range(model_config.max_context_len):
-                input_feed[obj['masked_contexts'][step].name] = [
+                input_feed[data_feed['masked_contexts'][step].name] = [
                     tmp_masked_contexts[batch_idx][step]
                     for batch_idx in range(model_config.batch_size)]
 
             for step in range(model_config.max_subword_len):
-                input_feed[obj['masked_words'][step].name] = [
+                input_feed[data_feed['masked_words'][step].name] = [
                     tmp_masked_words[batch_idx][1][step]
                     for batch_idx in range(model_config.batch_size)]
 
