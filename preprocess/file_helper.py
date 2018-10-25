@@ -29,8 +29,8 @@ def txt_reader(txt_file_path, encoding='utf-8', ignore_errors=False):
     return txt_list
 
 
-def txt_writer(txt_list, txt_file_path):
-    with open(txt_file_path, "w") as file:
+def txt_writer(txt_list, txt_file_path, encoding='utf-8'):
+    with open(txt_file_path, "w", encoding=encoding) as file:
         for row in txt_list:
             file.write(row + '\n')
 

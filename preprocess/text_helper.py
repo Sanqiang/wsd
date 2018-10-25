@@ -288,8 +288,10 @@ class CoreNLPTokenizer(TextBaseHelper):
 
         # abbr annotation pattern (senses must be represented by CUI or digits)
         annotate_ptn = re.compile(r"abbr \| ([\w\-/'.]+?) \| (C?\d+)")
+        annotate_with_long_form_ptn = re.compile(r"abbr \| ([\w\-/'.]+?) \| ([C\d;]+?) \| (\w+)")
 
         txt = re.sub(annotate_ptn, r"abbr|\1|\2", txt)
+        txt = re.sub(annotate_with_long_form_ptn, r"abbr|\1|\2|\3", txt)
         return txt
 
 
