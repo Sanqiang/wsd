@@ -164,21 +164,41 @@ def map_longform2cui(lf2cui_dict, long_form_set):
     return lf2cui, lf2cui_valid
 
 
-def add_annotation_umn(sense_inventory, txt_list):
-    print("Processing annotations...")
+def add_abbr_marker_umn(txt_list, abbr_marker="abbr-abbr"):
+    """
+    Add a abbr instance marker before tokenizer.
+
+    :param txt_list:
+    :param abbr_marker:
+    :return:
+    """
     docs_procs = []
     for items, doc in zip(instance_list, txt_list):
-        abbr = items[0]
-        long_form = items[1]
-        start = int(items[2])
+        abbr, start = items[0], int(items[2])
+        doc_processed = "".join([
+            doc[:start],
+            " %s " % abbr_marker,
+            doc[start+len(abbr):]
+        ])
+        docs_procs.append(doc_processed)
+    return docs_procs
+
+
+def add_annotation_umn(sense_inventory, txt_list):
+    """
+    Replace abbr markers to abbr instance format (abbr|AB|C1234567).
+
+    :param sense_inventory:
+    :param txt_list:
+    :return:
+    """
+    docs_procs = []
+    for items, doc in zip(instance_list, txt_list):
+        abbr, long_form = items[0], items[1]
         # use CUI to replace long form
         sense = sense_inventory[abbr][long_form]
         if sense is not None:
-            doc_processed = "".join([
-                doc[:start],
-                " abbr|%s|%s|%s " % (abbr, sense, "_".join(re.split(r'\W+', long_form))),
-                doc[start+len(abbr):]
-            ])
+            doc_processed = re.sub(r"abbr\-abbr", " abbr|%s|%s " % (abbr, sense), doc)
             docs_procs.append(doc_processed)
     return docs_procs
 
@@ -233,7 +253,7 @@ if __name__ == '__main__':
     # Process UMN documents
     #############################
 
-    umn_txt_annotated = add_annotation_umn(UMN_sense_cui_inventory, umn_txt)
+    umn_txt_marked = add_abbr_marker_umn(umn_txt)
 
     # Initialize processor and tokenizer
     processor = TextProcessor([
@@ -245,13 +265,15 @@ if __name__ == '__main__':
     filter_processor = TextProcessor([
         token_filter,
         repeat_non_word_remover,
-        recover_upper_cui])
+        recover_upper_cui_umn])
 
     # pre-processing
-    share_txt = processor.process_texts(umn_txt_annotated, n_jobs=30)
+    umn_txt = processor.process_texts(umn_txt_marked, n_jobs=30)
     # tokenizing
-    share_txt_tokenized = toknizer.process_texts(share_txt, n_jobs=30)
+    umn_txt_tokenized = toknizer.process_texts(umn_txt, n_jobs=30)
+    # add real annotations
+    umn_txt_annotated = add_annotation_umn(UMN_sense_cui_inventory, umn_txt_tokenized)
     # Filter trivial tokens and Remove repeat non-words
-    share_txt_filtered = filter_processor.process_texts(share_txt_tokenized, n_jobs=30)
+    umn_txt_filtered = filter_processor.process_texts(umn_txt_annotated, n_jobs=30)
     # Write to file
-    txt_writer(share_txt_filtered, umn_processed_path+"/umn_processed.txt")
+    txt_writer(umn_txt_filtered, umn_processed_path+"/umn_processed.txt")

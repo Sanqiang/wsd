@@ -288,10 +288,10 @@ class CoreNLPTokenizer(TextBaseHelper):
 
         # abbr annotation pattern (senses must be represented by CUI or digits)
         annotate_ptn = re.compile(r"abbr \| ([\w\-/'.]+?) \| (C?\d+)")
-        annotate_with_long_form_ptn = re.compile(r"abbr \| ([\w\-/'.]+?) \| ([C\d;]+?) \| (\w+)")
-
         txt = re.sub(annotate_ptn, r"abbr|\1|\2", txt)
-        txt = re.sub(annotate_with_long_form_ptn, r"abbr|\1|\2|\3", txt)
+
+        # annotate_with_long_form_ptn = re.compile(r"abbr \| ([\w\-/'.]+?) \| ([C\d;]+?) \| (\w+)")
+        # txt = re.sub(annotate_with_long_form_ptn, r"abbr|\1|\2|\3", txt)
         return txt
 
 
@@ -339,9 +339,14 @@ def recover_upper_cui(txt):
     :param txt:
     :return:
     """
-    # abbr annotation pattern (senses must be represented by CUI or digits)
-    annotate_ptn = re.compile(r"(abbr\|[\w\-/'.]+?\|)c(\d+)")
-    txt = re.sub(annotate_ptn, r"\1C\2", txt)
+    def upper_cui(m):
+        part1 = m.group(1)
+        part2 = m.group(2)
+        return "".join([part1, part2.upper()])
+
+    # abbr annotation pattern (senses must be represented by CUI or digits, can be list of CUIs separated by ;)
+    annotate_ptn = re.compile(r"(abbr\|[\w\-/'.]+?\|)([c\d;]+)")
+    txt = re.sub(annotate_ptn, upper_cui, txt)
     return txt
 
 
