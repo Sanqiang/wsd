@@ -28,7 +28,7 @@ def predict_from_model(sess, graph, data, data_config, test_true):
     step = 0
 
     while True:
-        input_feed, exclude_cnt, gt_targets, end_flag = get_feed(graph.objs, data, data_config, False)
+        input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, data_config, False)
         fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
                    graph.perplexity, graph.losses_eval]
         preds, loss, _, perplexity, losses_eval = sess.run(fetches, input_feed)
@@ -139,8 +139,8 @@ def eval(model_config, ckpt):
     start_time = datetime.now()
 
     while True:
-        input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, model_config, False)
-        fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
+        input_feed, exclude_cnt, gt_targets = get_feed(graph.data_feeds, data, model_config, False)
+        fetches = [graph.data_feeds[0]['pred'], graph.loss, graph.global_step,
                    graph.perplexity, graph.losses_eval]
         preds, loss, step, perplexity, losses_eval = sess.run(fetches, input_feed)
         perplexitys.append(perplexity)
@@ -248,8 +248,8 @@ if __name__ == '__main__':
 
     # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
     # ckpt_path = '/exp_data/20181021_base_abbrabbr/model/model.ckpt-4070595'
-    # ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-26491'
-    ckpt_path = '/Users/memray/Project/upmc_wsd/wsd_perf/1020_clas/log/model.ckpt-2455'
+    ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-2532'
+    # ckpt_path = '/Users/memray/Project/upmc_wsd/wsd_perf/1020_clas/log/model.ckpt-2532'
     # #####################################
     # # testing (directly compute score, not using standard pipeline)
     # #####################################

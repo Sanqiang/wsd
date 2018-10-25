@@ -22,7 +22,6 @@ sys.path.insert(0,'/zfs1/hdaqing/saz31/wsd/wsd_code')
 args = get_args()
 
 
-
 def list_config(config):
     attrs = [attr for attr in dir(config)
                if not callable(getattr(config, attr)) and not attr.startswith("__")]
@@ -92,7 +91,7 @@ def train(model_config):
             progbar = Progbar(target=train_data.size)
             # Train task
             for _ in range(model_config.task_iter_steps):
-                input_feed, _, _ = get_feed(graph.objs, train_data, model_config, True)
+                input_feed, _, _ = get_feed(graph.data_feeds, train_data, model_config, True)
                 fetches = [graph.train_op, graph.increment_global_step_task, graph.increment_global_step,
                            graph.global_step_task,
                            graph.perplexity,
@@ -107,13 +106,13 @@ def train(model_config):
                     end_time = datetime.now()
                     time_span = end_time - start_time
                     start_time = end_time
-                    print('TASK: Perplexity:\t%f at step=%d using %s with loss=%s.'
+                    print('\nTASK: Perplexity:\t%f at step=%d using %s with loss=%s.'
                           % (perplexity, step, time_span,
                              np.mean(loss)))
                     perplexitys.clear()
                     previous_step = step
 
-                instance_collections = evaluate_on_testsets(sess, graph, train_data)
+                # instance_collections = evaluate_on_testsets(sess, graph, train_data)
 
             # Fine tune CUI
             if model_config.extra_loss:

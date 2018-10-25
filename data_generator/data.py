@@ -96,8 +96,8 @@ class Data:
                 # if abbr in self.abbrs_filterout:
                 #     continue
                 sense = pair[2]
-                longform = pair[3]
-                longform_tokens =  self.voc.encode(longform)
+                # longform = pair[3]
+                # longform_tokens =  self.voc.encode(longform)
 
                 if 'add_abbr' in self.model_config.voc_process:
                     wid = self.voc.encode(abbr)
@@ -108,7 +108,8 @@ class Data:
                 abbr_id = self.abbr2id[abbr]
                 if sense in self.sense2id:
                     sense_id = self.sense2id[sense]
-                    targets.append([id, abbr_id, sense_id, line_id, inst_id, longform_tokens])
+                    targets.append([id, abbr_id, sense_id, line_id, inst_id])
+                    # targets.append([id, abbr_id, sense_id, line_id, inst_id, longform_tokens])
                     inst_id += 1  # global instance id increment
             else:
                 wid = self.voc.encode(word)
@@ -282,9 +283,9 @@ class TrainData(Data):
         i = 0
         f = open(data_file, 'r')
         while True:
-            if i >= self.size:
-                i = 0
-                f = open(self.model_config.train_file)
+            # if i >= self.size:
+            #     i = 0
+            #     f = open(data_file, 'r')
 
             line = f.readline()
             if rd.random() < 0.5 or i >= self.size:
@@ -314,6 +315,8 @@ class EvalData(TrainData):
 
         self.data_it = self.get_sample_it(self.model_config.eval_file)
         self.size = self.get_size(self.model_config.eval_file)
+
+        print('Test file path: %s' % self.model_config.eval_file)
         print('Finished Data Iter with %s samples.' % str(self.size))
 
 

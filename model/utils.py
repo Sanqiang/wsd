@@ -11,7 +11,9 @@ def get_feed(objs, data, model_config, is_train):
         cnt = 0
         while cnt < model_config.batch_size:
             if model_config.it_train:
-                example = next(data.data_it)
+                example = next(data.data_it, None)
+                print(cnt)
+                print(example)
             else:
                 example = data.get_sample()
 

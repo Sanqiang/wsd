@@ -5,6 +5,67 @@ from tensor2tensor.layers import common_attention, common_layers
 from tensor2tensor.models.research import universal_transformer_util, universal_transformer
 import numpy as np
 
+def get_optim(model_config):
+    learning_rate = tf.constant(model_config.learning_rate)
+
+    if model_config.optimizer == 'adagrad':
+        opt = tf.train.AdagradOptimizer(learning_rate)
+    # Adam need lower learning rate
+    elif model_config.optimizer == 'adam':
+        opt = tf.train.AdamOptimizer(learning_rate)
+    elif model_config.optimizer == 'adadelta':
+        opt = tf.train.AdadeltaOptimizer(learning_rate)
+    else:
+        raise Exception('Not Implemented Optimizer!')
+    return opt
+
+
+def embedding_fn(inputs, embedding):
+    if type(inputs) == list:
+        if not inputs:
+            return []
+        else:
+            return [tf.nn.embedding_lookup(embedding, inp) for inp in inputs]
+    else:
+        return tf.nn.embedding_lookup(embedding, inputs)
+
+
+# Got from https://github.com/tensorflow/models/blob/master/tutorials/image/cifar10/cifar10_multi_gpu_train.py#L101
+def average_gradients(tower_grads):
+    """Calculate the average gradient for each shared variable across all towers.
+    Note that this function provides a synchronization point across all towers.
+    Args:
+      tower_grads: List of lists of (gradient, variable) tuples. The outer list
+        is over individual gradients. The inner list is over the gradient
+        calculation for each tower.
+    Returns:
+       List of pairs of (gradient, variable) where the gradient has been averaged
+       across all towers.
+    """
+    average_grads = []
+    for grad_and_vars in zip(*tower_grads):
+        # Note that each grad_and_vars looks like the following:
+        #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
+        grads = []
+        for g, _ in grad_and_vars:
+            # Add 0 dimension to the gradients to represent the tower.
+            expanded_g = tf.expand_dims(g, 0)
+
+            # Append on a 'tower' dimension which we will average over below.
+            grads.append(expanded_g)
+
+        # Average over the 'tower' dimension.
+        grad = tf.concat(axis=0, values=grads)
+        grad = tf.reduce_mean(grad, 0)
+
+        # Keep in mind that the Variables are redundant because they are shared
+        # across towers. So .. we will just return the first tower's pointer to
+        # the Variable.
+        v = grad_and_vars[0][1]
+        grad_and_var = (grad, v)
+        average_grads.append(grad_and_var)
+    return average_grads
+
 
 class BaseGraph:
     def __init__(self, is_train, model_config, data):
@@ -13,65 +74,6 @@ class BaseGraph:
         self.data = data
         self.hparams = transformer.transformer_base()
         self.setup_hparams()
-
-    def get_optim(self):
-        learning_rate = tf.constant(self.model_config.learning_rate)
-
-        if self.model_config.optimizer == 'adagrad':
-            opt = tf.train.AdagradOptimizer(learning_rate)
-        # Adam need lower learning rate
-        elif self.model_config.optimizer == 'adam':
-            opt = tf.train.AdamOptimizer(learning_rate)
-        elif self.model_config.optimizer == 'adadelta':
-            opt = tf.train.AdadeltaOptimizer(learning_rate)
-        else:
-            raise Exception('Not Implemented Optimizer!')
-        return opt
-
-    def embedding_fn(self, inputs, embedding):
-        if type(inputs) == list:
-            if not inputs:
-                return []
-            else:
-                return [tf.nn.embedding_lookup(embedding, inp) for inp in inputs]
-        else:
-            return tf.nn.embedding_lookup(embedding, inputs)
-
-    # Got from https://github.com/tensorflow/models/blob/master/tutorials/image/cifar10/cifar10_multi_gpu_train.py#L101
-    def average_gradients(self, tower_grads):
-        """Calculate the average gradient for each shared variable across all towers.
-        Note that this function provides a synchronization point across all towers.
-        Args:
-          tower_grads: List of lists of (gradient, variable) tuples. The outer list
-            is over individual gradients. The inner list is over the gradient
-            calculation for each tower.
-        Returns:
-           List of pairs of (gradient, variable) where the gradient has been averaged
-           across all towers.
-        """
-        average_grads = []
-        for grad_and_vars in zip(*tower_grads):
-            # Note that each grad_and_vars looks like the following:
-            #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-            grads = []
-            for g, _ in grad_and_vars:
-                # Add 0 dimension to the gradients to represent the tower.
-                expanded_g = tf.expand_dims(g, 0)
-
-                # Append on a 'tower' dimension which we will average over below.
-                grads.append(expanded_g)
-
-            # Average over the 'tower' dimension.
-            grad = tf.concat(axis=0, values=grads)
-            grad = tf.reduce_mean(grad, 0)
-
-            # Keep in mind that the Variables are redundant because they are shared
-            # across towers. So .. we will just return the first tower's pointer to
-            # the Variable.
-            v = grad_and_vars[0][1]
-            grad_and_var = (grad, v)
-            average_grads.append(grad_and_var)
-        return average_grads
 
     def setup_hparams(self):
         self.hparams.num_heads = self.model_config.num_heads
@@ -94,6 +96,7 @@ class BaseGraph:
             # hparams for universal t2t
             self.hparams = universal_transformer.update_hparams_for_universal_transformer(self.hparams)
             self.hparams.recurrence_type = "act"
+
 
     def get_aggregate_state(self, encoder_outputs, bias_mask):
         '''
@@ -123,14 +126,16 @@ class BaseGraph:
         return aggregate_state
 
 
-class ContextEncoder(BaseGraph):
-    def __init__(self, is_train, model_config, data, embs):
-        BaseGraph.__init__(self, is_train, model_config, data)
+class ContextEncoder():
+    def __init__(self, embs, voc, model_config, hparam):
         self.embs = embs
+        self.voc = voc
+        self.model_config = model_config
+        self.hparam = hparam
 
     def embed_context(self, contexts):
         with tf.variable_scope('context_embed'):
-            contexts_emb = self.embedding_fn(contexts, self.embs)
+            contexts_emb = embedding_fn(contexts, self.embs)
             return contexts_emb
 
     def context_encoder(self, contexts_emb, contexts, abbr_inp_emb=None):
@@ -149,7 +154,7 @@ class ContextEncoder(BaseGraph):
         # Create an bias tensor as mask (big neg values for padded part), input=[batch_size, context_len], output=[batch_size, 1, 1, context_len]
         contexts_bias = common_attention.attention_bias_ignore_padding(
             tf.to_float(tf.equal(tf.stack(contexts, axis=1),
-                                 self.data.voc.encode(constant.PAD))))
+                                 self.voc.encode(constant.PAD))))
         # add dropout to context input [batch_size, max_context_len, emb_dim]
         contexts_emb = tf.nn.dropout(contexts_emb,
                                      1.0 - self.hparams.layer_prepostprocess_dropout)
@@ -195,14 +200,16 @@ class ContextEncoder(BaseGraph):
         return encoder_output, weights, extra_loss
 
 
-class AbbrEncoderDecoder(BaseGraph):
-    def __init__(self, is_train, model_config, data, embs):
-        BaseGraph.__init__(self, is_train, model_config, data)
+class AbbrEncoderDecoder():
+    def __init__(self, embs, voc, model_config, hparam):
         self.embs = embs
+        self.voc = voc
+        self.model_config = model_config
+        self.hparam = hparam
 
     def embed_context(self, contexts):
         with tf.variable_scope('context_embed'):
-            contexts_emb = self.embedding_fn(contexts, self.embs)
+            contexts_emb = embedding_fn(contexts, self.embs)
             return contexts_emb
 
     def forward(self, contexts_emb, contexts, abbr_inp_emb, longform_emb=None):
@@ -219,7 +226,7 @@ class AbbrEncoderDecoder(BaseGraph):
 
         contexts_bias = common_attention.attention_bias_ignore_padding(
             tf.to_float(tf.equal(tf.stack(contexts, axis=1),
-                                 self.data.voc.encode(constant.PAD))))
+                                 self.voc.encode(constant.PAD))))
 
         contexts_emb = tf.nn.dropout(contexts_emb,
                                      1.0 - self.hparams.layer_prepostprocess_dropout)
@@ -266,11 +273,12 @@ class Graph(BaseGraph):
     def __init__(self, is_train, model_config, data):
         BaseGraph.__init__(self, is_train, model_config, data)
 
+
     def create_model_multigpu(self):
         with tf.device('/cpu:0'):
             losses = []
-            optim = self.get_optim()
-            self.objs = []
+            data_feeds = []
+            optim = get_optim(self.model_config)
 
             with tf.variable_scope('shared'):
                 with tf.device('/cpu:0'):
@@ -314,11 +322,11 @@ class Graph(BaseGraph):
                 for gpu_id in range(self.model_config.num_gpus):
                     with tf.device('/device:GPU:%d' % gpu_id):
                         with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
-                            loss, obj = self.create_model()
+                            loss, data_feed = self.create_model()
                             print('Built Model for GPU%s' % gpu_id)
                             tf.get_variable_scope().reuse_variables()
                             losses.append(loss)
-                            self.objs.append(obj)
+                            data_feeds.append(data_feed)
 
             with tf.device('/gpu:0'):
                 # Add graph for cui
@@ -337,6 +345,7 @@ class Graph(BaseGraph):
                     self.losses_eval = losses[0] # In eval, single cpu/gpu is used.
 
                 self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
+
 
     def get_logits(self, query_vector, cand_mask):
         '''
@@ -436,7 +445,7 @@ class Graph(BaseGraph):
             with tf.variable_scope('model'):
                 if self.model_config.abbr_mode == 'abbr':
                     # [batch_size, emb_dim]
-                    abbr_inp_emb = self.embedding_fn(abbr_inp, self.abbr_embs)
+                    abbr_inp_emb = embedding_fn(abbr_inp, self.abbr_embs)
                 elif self.model_config.abbr_mode == 'sense':
                     # TODO looks not correct, abbr_inp_emb.shape = [1, emb_dim] instead of [batch_size, emb_dim]
                     sense_weight = tf.get_variable('sense_weight',
@@ -470,7 +479,7 @@ class Graph(BaseGraph):
                     output_layer_input = aggregate_state
 
                 elif self.model_config.architecture == 'abbr_encdec':
-                    context_encoder = AbbrEncoderDecoder(self.is_train, self.model_config, self.data, self.embs)
+                    context_encoder = AbbrEncoderDecoder(self.embs, self.data.voc, self.model_config, self.hparam)
                     # [batch_size, 1, emb_dim]
                     abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
                     # [batch_size, context_len, emb_dim]
@@ -523,20 +532,21 @@ class Graph(BaseGraph):
                         pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
                 tf.get_variable_scope().reuse_variables()
 
-        obj = {
+        data_feed = {
             'contexts': contexts,
             'abbr_inp': abbr_inp,
             'sense_inp': sense_inp,
         }
-        if not self.is_train:
-            obj['pred'] = pred
-        if self.model_config.hub_module_embedding:
-            obj['text_input'] = text_input
-        if self.model_config.lm_mask_rate:
-            obj['masked_words'] = masked_words
-            obj['masked_contexts'] = masked_contexts
 
-        return loss, obj
+        if not self.is_train:
+            data_feed['pred'] = pred
+        if self.model_config.hub_module_embedding:
+            data_feed['text_input'] = text_input
+        if self.model_config.lm_mask_rate:
+            data_feed['masked_words'] = masked_words
+            data_feed['masked_contexts'] = masked_contexts
+
+        return loss, data_feed
 
 
     def create_model_cui(self):
@@ -562,7 +572,7 @@ class Graph(BaseGraph):
                         tf.zeros(self.model_config.batch_size, tf.int32, name='def_input'))
 
                 defs_stack = tf.stack(defs, axis=1)
-                defs_embed = self.embedding_fn(defs_stack, self.embs)
+                defs_embed = embedding_fn(defs_stack, self.embs)
                 defs_bias = common_attention.attention_bias_ignore_padding(
                     tf.to_float(tf.equal(defs_stack,
                                          self.data.voc.encode(constant.PAD))))
@@ -575,7 +585,7 @@ class Graph(BaseGraph):
 
             if 'stype' in self.model_config.extra_loss:
                 stype_inp = tf.zeros(self.model_config.batch_size, tf.int32, name='stype_input')
-                style_emb = self.embedding_fn(stype_inp, self.stype_embs)
+                style_emb = embedding_fn(stype_inp, self.stype_embs)
                 inputs.append(style_emb)
 
             if len(inputs) > 1:
@@ -589,7 +599,7 @@ class Graph(BaseGraph):
             self.loss_cui = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
 
             with tf.variable_scope('cui_optimization'):
-                optim = self.get_optim()
+                optim = get_optim(self.model_config)
                 self.perplexity_cui = tf.exp(tf.reduce_mean(self.loss_cui))
                 self.train_op_cui = optim.minimize(self.loss_cui)
                 self.increment_global_step_cui = tf.assign_add(self.global_step_cui, 1)

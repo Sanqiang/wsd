@@ -54,8 +54,8 @@ def eval(model_config, ckpt):
         start_time = datetime.now()
 
         while True:
-            input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, eval_data, model_config, False)
-            fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
+            input_feed, exclude_cnt, gt_targets = get_feed(graph.data_feeds, eval_data, model_config, False)
+            fetches = [graph.data_feeds[0]['pred'], graph.loss, graph.global_step,
                        graph.perplexity, graph.losses_eval]
             preds, loss, step, perplexity, losses_eval = sess.run(fetches, input_feed)
             perplexitys.append(perplexity)
