@@ -1,11 +1,13 @@
 """
 Test on test datasets.
 """
+import os
+
 from tensorflow.keras.utils import Progbar
 
 from data_generator.data import TrainData, EvalData
 from model.graph import Graph
-from model.utils import get_feed, get_session_config
+from data_generator.data import get_feed, get_session_config
 from util.checkpoint import copy_ckpt_to_modeldir
 
 import tensorflow as tf
@@ -21,36 +23,52 @@ from model.model_config import get_args, BaseConfig
 from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceCollector, evaluation
 
 
-def predict_from_model(sess, graph, data, data_config, test_true):
+def evaluate_and_write_to_disk(sess, graph, train_dataloader, output_file_path,
+                               epoch, step, loss, perplexity):
+    instance_collections = evaluate_on_testsets(sess, graph, train_dataloader)
+    with open(output_file_path, 'a') as score_csv_file:
+        if os.path.getsize(output_file_path) == 0:
+            line = ','.join([str(i) for i in ['epoch', 'step', 'loss', 'perplexity']])
+            for testset_name, (_, _, score_dict) in instance_collections.items():
+                line += ',%s_%s' % (testset_name, '')
+            line += '\n'
+            score_csv_file.write(line)
+
+
+def predict_from_model(sess, graph, test_dataloader, data_config):
     instance_collection_pred = []
 
-    progbar = Progbar(target=data.size)
-    step = 0
+    progbar = Progbar(target=test_dataloader.size)
 
     while True:
-        input_feed, exclude_cnt, gt_targets = get_feed(graph.objs, data, data_config, False)
-        fetches = [graph.objs[0]['pred'], graph.loss, graph.global_step,
+        input_feed, excluded_count, gt_targets = get_feed(graph.data_feeds, test_dataloader, data_config, False)
+        fetches = [graph.data_feeds[0]['pred'], graph.loss, graph.global_step,
                    graph.perplexity, graph.losses_eval]
         preds, loss, _, perplexity, losses_eval = sess.run(fetches, input_feed)
 
-        step += 1
-        progbar.update(current=step * data_config.batch_size, values=[('loss', loss), ('ppl', perplexity)])
+        progbar.update(current=gt_targets[-1]['line_id'],
+                       values=[('loss', loss), ('ppl', perplexity)])
 
-        for batch_id in range(data_config.batch_size - exclude_cnt):
-            gt_target = gt_targets[batch_id]
-            pred = preds[batch_id]
-            instance_collection_pred.append(InstancePred(
-                index=gt_target[0],
-                abbr=data.id2abbr[gt_target[1]],
-                sense_pred=data.id2sense[pred[0]]))
+        for example_id in range(data_config.batch_size - excluded_count):
+            gt_target = gt_targets[example_id]
+            pred = preds[example_id]
+            instance_collection_pred.append(
+                InstancePred(
+                    index=gt_target['inst_id'],
+                    abbr=gt_target['abbr'],
+                    sense_pred=test_dataloader.id2sense[pred[0]] if gt_target['abbr_id'] else None
+                )
+            )
 
-        if exclude_cnt > 0:
+        if excluded_count > 0:
             break
 
     # sort collection list by the global instance idx
     instance_collection_pred = sorted(instance_collection_pred, key=lambda x: x.index)
 
+    '''
     # some instances might have been skipped, thus we add non-included instances before returning
+    # Rui: not necessary now as no data is skipped
     instance_collection = []
     temp_idx = 0
     for idx in range(len(test_true)):
@@ -60,38 +78,45 @@ def predict_from_model(sess, graph, data, data_config, test_true):
             temp_idx += 1
         else:
             instance_collection.append(InstancePred(index=idx, abbr=None, sense_pred=None))
+    '''
 
-    return instance_collection
+    return instance_collection_pred
 
 
 def evaluate_on_testsets(sess, graph, train_data):
-    instance_collections = {}
+    test_instance_collections = {}
 
-    for test_dataset in ['msh', 'share', 'mimic']:
-        print('Evaluating on %s' % test_dataset)
+    for test_dataset_name in ['msh', 'share', 'mimic']:
+        print('Evaluating on %s' % test_dataset_name)
 
-        if test_dataset == 'share':
-            test_file = dataset_paths.share_txt
-        elif test_dataset == 'msh':
-            test_file = dataset_paths.msh_txt
-        elif test_dataset == 'mimic':
-            test_file = dataset_paths.mimic_eval_txt
+        if test_dataset_name == 'share':
+            test_filepath = dataset_paths.share_txt
+        elif test_dataset_name == 'msh':
+            test_filepath = dataset_paths.msh_txt
+        elif test_dataset_name == 'mimic':
+            test_filepath = dataset_paths.mimic_eval_txt
         else:
             raise ValueError('Please type valid dataset name')
 
         # test file path
         data_config = BaseConfig()
-        setattr(data_config, 'eval_file', test_file)
+        setattr(data_config, 'eval_file', test_filepath)
 
-        test_collector = AbbrInstanceCollector(test_file)
-        test_true = test_collector.generate_instance_collection()
-        test_data = EvalData(train_data, data_config)
+        test_collector = AbbrInstanceCollector(test_filepath)
+        test_true_collection = test_collector.generate_instance_collection()
+        test_dataloader = EvalData(train_data, data_config, dataset_name=test_dataset_name)
 
-        instance_collection = predict_from_model(sess, graph, test_data, data_config, test_true)
-        evaluation(test_true, instance_collection)
-        instance_collections[test_dataset] = instance_collection
+        test_pred_collection = predict_from_model(sess, graph, test_dataloader, data_config)
 
-    return instance_collections
+        score_dict = evaluation(test_true_collection, test_pred_collection)
+
+        print('Performance of testset %s:' % test_dataset_name)
+        for key, value in score_dict.items():
+            print('\t%s = %.6f' % (key, value))
+
+        test_instance_collections[test_dataset_name] = (test_true_collection, test_pred_collection, score_dict)
+
+    return test_instance_collections
 
 
 def predict_from_checkpoint(model_config, ckpt):
@@ -248,7 +273,7 @@ if __name__ == '__main__':
 
     # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
     # ckpt_path = '/exp_data/20181021_base_abbrabbr/model/model.ckpt-4070595'
-    ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-2532'
+    ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-65'
     # ckpt_path = '/Users/memray/Project/upmc_wsd/wsd_perf/1020_clas/log/model.ckpt-2532'
     # #####################################
     # # testing (directly compute score, not using standard pipeline)

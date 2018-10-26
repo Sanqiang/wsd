@@ -34,7 +34,7 @@ class DataSetPaths:
         self.msh_test_folder = get_path('../wsd_data/msh/msh_processed/test/', env=environment)
 
 
-def process_token(token):
+def process_abbr_token(token):
     """
     Unpack token (e.g., abbr|ab|C1234567|long_form).
     If instance format of DataSet change, please only change here.
@@ -42,14 +42,13 @@ def process_token(token):
     :param token:
     :return:
     """
-    if token.startswith('abbr|'):
-        items = token.split("|")
-        if len(items) == 4:
-            _, abbr, sense, long_form = items
-            return abbr, sense, long_form
-        elif len(items) == 3:
-            _, abbr, sense = items
-            return abbr, sense, None
+    items = token.split("|")
+    if len(items) == 4:
+        _, abbr, sense, long_form = items
+        return abbr, sense, long_form
+    elif len(items) == 3:
+        _, abbr, sense = items
+        return abbr, sense, None
 
 
 class AbbrInstanceCollector:
@@ -70,7 +69,7 @@ class AbbrInstanceCollector:
         global_instance_idx = 0
         for line in self.corpus:
             for token in line.split(" "):
-                items = process_token(token)
+                items = process_abbr_token(token)
                 if items is not None:
                     abbr, sense, long_form = items
                     instance_collection.append(Instance(
@@ -95,7 +94,7 @@ class AbbrInstanceCollector:
         dataset_counter = defaultdict(Counter)
         for line in self.corpus:
             for token in line.split(" "):
-                items = process_token(token)
+                items = process_abbr_token(token)
                 if items is not None:
                     abbr, sense, _ = items
                     dataset_counter[abbr].update([sense])
@@ -120,7 +119,7 @@ class AbbrInstanceCollector:
             doc_processed = []
             tokens = doc.rstrip('\n').split(" ")
             for idx, token in enumerate(tokens):
-                items = process_token(token)
+                items = process_abbr_token(token)
                 if items is not None:
                     abbr, sense, _ = items
                     # add abbr info to inverted index
@@ -207,17 +206,35 @@ def evaluation(instance_collection_true, instance_collection_pred):
     :return:
     """
     assert len(instance_collection_true) == len(instance_collection_pred)
-    count_correct, count_total = 0.0, 0.0
+    count_correct, count_total, count_capable_total = 0.0, 0.0, 0.0
     for instance_true, instance_pred in zip(instance_collection_true, instance_collection_pred):
         assert instance_true.index == instance_pred.index
         if instance_true.sense == instance_pred.sense_pred:
             count_correct += 1.0
         count_total += 1.0
+        # count the number of datapoints that model is able to predict
+        if instance_pred.sense_pred:
+            count_capable_total += 1.0
 
-    acc = count_correct / count_total
-    print('Accuray = %s' % acc)
-    print()
-    return acc
+    if count_total > 0:
+        acc = count_correct / count_total
+    else:
+        acc = 0.0
+
+    if count_capable_total > 0:
+        acc_capable = count_correct / count_capable_total
+    else:
+        acc_capable = 0.0
+
+    score_dict = {
+                  'accuracy': acc,
+                  'accuracy_capable': acc_capable,
+                  'num_correct': count_correct,
+                  'num_total': count_total,
+                  'num_capable_total': count_capable_total,
+    }
+
+    return score_dict
 
 
 if __name__ == '__main__':

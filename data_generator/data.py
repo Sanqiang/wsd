@@ -1,3 +1,4 @@
+import dataset_helper
 from data_generator.vocab import Vocab
 from util.constant import NONTAR, UNK, BOS, EOS, PAD
 import random as rd
@@ -8,8 +9,155 @@ from collections import defaultdict
 import nltk
 from nltk.corpus import stopwords
 
+import tensorflow as tf
+
 
 STOP_WORDS_SET = set(stopwords.words('english'))
+
+
+
+def get_feed(data_feeds, data_loader, model_config, is_train):
+    """
+    Create a new batch of input_feed by loading from data iteratively
+    The key of each element in feed_dict is given by the model when generating the graph
+    TODO, because it is device-dependent
+    :param data_feeds: providing the keys for generating feed_dict, number of data_feeds depends on number of devices
+    :param data_loader: a TrainData/EvalData object
+    :param model_config:
+    :param is_train:
+    :return:
+    """
+    input_feed_dict = {}
+    excluded_example_count = 0
+
+    for data_feed in data_feeds:
+        tmp_contexts, tmp_targets, tmp_lines = [], [], []
+        tmp_masked_contexts, tmp_masked_words = [], []
+        example_in_batch_count = 0
+        while example_in_batch_count < model_config.batch_size:
+            if model_config.it_train:
+                example = next(data_loader.data_it, None)
+            else:
+                # TODO: not tested
+                example = data_loader.get_sample()
+
+            # mainly used in evaluation when testset file reaches EOF, create a dummy input to feed model
+            if example is None:
+                example = {}
+                example['contexts'] = [0] * model_config.max_context_len
+                example['target'] = {'pos_id': 0,
+                                     'abbr_id': 0,
+                                     'abbr': None,
+                                     'sense_id': 0,
+                                     'sense': None,
+                                     'line_id': data_loader.size,
+                                     'inst_id': 0
+                                     }
+                example['line'] = ''
+                # sample['def'] = [0] * model_config.max_def_len
+                # sample['stype'] = 0
+                excluded_example_count += 1  # Assume eval use single GPU
+
+            # print(example_in_batch_count)
+            # print(excluded_example_count)
+            # print(example)
+
+            tmp_contexts.append(example['contexts'])
+            tmp_targets.append(example['target'])
+            tmp_lines.append(example['line'])
+            # print('input:\t%s\t%s.' % (sample['line'], sample['target']))
+            if model_config.lm_mask_rate and 'cur_masked_contexts' in example:
+                tmp_masked_contexts.append(example['cur_masked_contexts'])
+                tmp_masked_words.append(example['masked_words'])
+
+            # print('done one example, current len(batch)=%d' % len(tmp_contexts))
+            example_in_batch_count += 1
+
+        for step in range(model_config.max_context_len):
+            input_feed_dict[data_feed['contexts'][step].name] = [
+                tmp_contexts[batch_idx][step]
+                for batch_idx in range(model_config.batch_size)]
+
+        if model_config.hub_module_embedding:
+            input_feed_dict[data_feed['text_input'].name] = [
+                tmp_lines[batch_idx]
+                for batch_idx in range(model_config.batch_size)]
+
+        input_feed_dict[data_feed['abbr_inp'].name] = [
+            tmp_targets[batch_idx]['abbr_id']
+            for batch_idx in range(model_config.batch_size)
+        ]
+
+        input_feed_dict[data_feed['sense_inp'].name] = [
+            tmp_targets[batch_idx]['sense_id']
+            for batch_idx in range(model_config.batch_size)
+        ]
+
+        if model_config.lm_mask_rate and tmp_masked_contexts:
+            i = 0
+            while len(tmp_masked_contexts) < model_config.batch_size:
+                tmp_masked_contexts.append(tmp_masked_contexts[i % len(tmp_masked_contexts)])
+                tmp_masked_words.append(tmp_masked_words[i % len(tmp_masked_contexts)])
+                i += 1
+
+            for step in range(model_config.max_context_len):
+                input_feed_dict[data_feed['masked_contexts'][step].name] = [
+                    tmp_masked_contexts[batch_idx][step]
+                    for batch_idx in range(model_config.batch_size)]
+
+            for step in range(model_config.max_subword_len):
+                input_feed_dict[data_feed['masked_words'][step].name] = [
+                    tmp_masked_words[batch_idx][1][step]
+                    for batch_idx in range(model_config.batch_size)]
+
+    return input_feed_dict, excluded_example_count, tmp_targets
+
+
+def get_feed_cui(obj, data, model_config):
+    """Feed the CUI model."""
+    input_feed = {}
+    tmp_extra_cui_def, tmp_extra_cui_stype, tmp_cuiid, tmp_abbrid = [], [], [], []
+    cnt = 0
+    while cnt < model_config.batch_size:
+        sample = next(data.data_it_cui)
+        tmp_cuiid.append(sample['cui_id'])
+        tmp_abbrid.append(sample['abbr_id'])
+        if 'def' in model_config.extra_loss:
+            tmp_extra_cui_def.append(sample['def'])
+        if 'stype' in model_config.extra_loss:
+            tmp_extra_cui_stype.append(sample['stype'])
+        cnt += 1
+
+    input_feed[obj['abbr_inp'].name] = [
+        tmp_abbrid[batch_idx]
+        for batch_idx in range(model_config.batch_size)
+    ]
+    input_feed[obj['sense_inp'].name] = [
+        tmp_cuiid[batch_idx]
+        for batch_idx in range(model_config.batch_size)
+    ]
+
+    if 'def' in model_config.extra_loss:
+        for step in range(model_config.max_def_len):
+            input_feed[obj['def'][step].name] = [
+                tmp_extra_cui_def[batch_idx][step]
+                for batch_idx in range(model_config.batch_size)]
+
+    if 'stype' in model_config.extra_loss:
+        input_feed[obj['stype'].name] = [
+            tmp_extra_cui_stype[batch_idx]
+            for batch_idx in range(model_config.batch_size)
+        ]
+
+    return input_feed
+
+
+def get_session_config():
+    config = tf.ConfigProto(allow_soft_placement=True)
+    # config.log_device_placement = True
+    config.gpu_options.allocator_type = "BFC"
+    config.gpu_options.allow_growth = True
+    return config
 
 
 class Data:
@@ -89,28 +237,45 @@ class Data:
         # else:
         #     contexts.extend(self.voc.encode(BOS))
 
-        for id, word in enumerate(words):
+        for pos_id, word in enumerate(words):
             if word.startswith('abbr|'):
-                pair = word.split('|')
-                abbr = pair[1]
-                # if abbr in self.abbrs_filterout:
-                #     continue
-                sense = pair[2]
-                # longform = pair[3]
-                # longform_tokens =  self.voc.encode(longform)
+                abbr, sense, long_form = dataset_helper.process_abbr_token(word)
 
                 if 'add_abbr' in self.model_config.voc_process:
                     wid = self.voc.encode(abbr)
                 else:
                     wid = self.voc.encode(NONTAR)
+
+                # Set abbr_id or sense_id to None if either one is not in our vocab/inventory
                 if abbr not in self.abbr2id:
-                    continue
-                abbr_id = self.abbr2id[abbr]
+                    # print('abbr %s not found in abbr vocab (size=%d), ignore this data example'
+                    #       % (abbr, len(self.abbr2id)))
+                    abbr_id = 0
+                else:
+                    abbr_id = self.abbr2id[abbr]
+
                 if sense in self.sense2id:
                     sense_id = self.sense2id[sense]
-                    targets.append([id, abbr_id, sense_id, line_id, inst_id])
-                    # targets.append([id, abbr_id, sense_id, line_id, inst_id, longform_tokens])
-                    inst_id += 1  # global instance id increment
+                else:
+                    sense_id = 0
+                    # print('sense %s is not in sense inventory (size=%d), ignore this data example'
+                    #       % (sense, len(self.sense2id)))
+
+                # return each target as a dict instead of a list
+                targets.append(
+                    {'pos_id': pos_id,
+                     'abbr_id': abbr_id,
+                     'abbr': abbr,
+                     'sense_id': sense_id,
+                     'sense': sense,
+                     'long_form': long_form,
+                     'line_id': line_id,
+                     'inst_id': inst_id
+                     }
+                )
+                # targets.append([pos_id, abbr_id, sense_id, line_id, inst_id])
+                # targets.append([id, abbr_id, sense_id, line_id, inst_id, longform_tokens])
+                inst_id += 1  # global instance id increment
             else:
                 wid = self.voc.encode(word)
 
@@ -127,7 +292,7 @@ class Data:
         examples = []
         window_size = int(self.model_config.max_context_len / 2)
         for target in targets:
-            pos_id = target[0]
+            pos_id = target['pos_id']
             extend_size = 0
             if pos_id < window_size:
                 left_idx = 0
@@ -190,7 +355,7 @@ class TrainData(Data):
             print('Finished Data Iter with %s samples.' % str(self.size))
 
     def get_size(self, data_file):
-        return len(open(data_file, encoding='utf-8').readlines())
+        return len([l for l in open(data_file, encoding='utf-8').readlines() if len(l.strip()) > 0])
 
     def get_sample(self):
         i = rd.sample(range(len(self.datas)), 1)[0]
@@ -211,12 +376,12 @@ class TrainData(Data):
                     'stype': stype}
                 yield obj
 
-    def prepare_data_for_masked_lm(self, line, objs):
+    def prepare_data_for_masked_lm(self, line, examples):
         if not self.model_config.lm_mask_rate:
-            return objs
+            return examples
         # print('Use Masked LM with rate %s' % self.model_config.lm_mask_rate)
 
-        masked_cnt = len(objs)
+        masked_cnt = len(examples)
         words = line.split()
         masked_contexts = []
         masked_words = []
@@ -248,8 +413,8 @@ class TrainData(Data):
         masked_contexts.extend(self.voc.encode(EOS))
         window_size = int(self.model_config.max_context_len / 2)
         if not masked_words:
-            return objs
-        for i in range(len(objs)):
+            return examples
+        for i in range(len(examples)):
             masked_word = masked_words[i % len(masked_words)]
             step = masked_word[0]
             extend_size = 0
@@ -274,38 +439,52 @@ class TrainData(Data):
                 cur_masked_contexts.extend(self.voc.encode(PAD) * num_pad)
             assert len(cur_masked_contexts) == self.model_config.max_context_len
 
-            objs[i]['cur_masked_contexts'] = cur_masked_contexts
-            objs[i]['masked_words'] = masked_word
-        return objs
+            examples[i]['cur_masked_contexts'] = cur_masked_contexts
+            examples[i]['masked_words'] = masked_word
+        return examples
 
-    def get_sample_it(self, data_file, reopen_at_EOF=True):
-        """Get ffed data from task
+    def get_sample_it(self, data_file, random_dropout=True, reopen_at_EOF=True):
+        """
+        Load data from file
+
         reopen_at_EOF: a boolean indicating whether we reopen file after reaching the end of file
          usually True for training and False for testing
+        random_dropout: whether to drop out data points by rate 50%, enabled for training
         """
-        i = 0
+        # line number, each line may contain multiple instances
+        data_line_id = 0
+        # data instance number
+        instance_id = 0
         f = open(data_file, 'r')
         while True:
-            if i >= self.size and reopen_at_EOF:
-                i = 0
-                f = open(data_file, 'r')
+            if data_line_id >= self.size:
+                if reopen_at_EOF:
+                    data_line_id = 0
+                    f = open(data_file, 'r')
+                else:
+                    break
 
             line = f.readline()
-            if rd.random() < 0.5 or i >= self.size:
-                i += 1
+
+            # skip some lines randonly for training to shuffle
+            if (random_dropout and rd.random() < 0.5):
+                data_line_id += 1
                 continue
 
-            examples, _ = self.process_line(line, i, 0) # inst_id is ignored in training
+            examples, instance_id = self.process_line(line, data_line_id, inst_id=instance_id)
             if len(examples) > 0:
                 examples = self.prepare_data_for_masked_lm(line, examples)
                 for example in examples:
                     yield example
-            i += 1
+
+            data_line_id += 1
+            # print('line_id=%d' % line_id)
 
 
 class EvalData(TrainData):
-    def __init__(self, train_data, data_config):
+    def __init__(self, train_data, data_config, dataset_name):
         self.model_config = data_config
+        self.dataset_name = dataset_name
 
         # Abbr
         abbr_attributes = ['id2abbr', 'abbr2id', 'id2sense', 'sense2id', 'sen_cnt']
@@ -316,12 +495,8 @@ class EvalData(TrainData):
         for attribute in  abbr_attributes + context_attributes + cui_attributes:
             setattr(self, attribute, getattr(train_data, attribute, None))
 
-        self.data_it = self.get_sample_it(self.model_config.eval_file, reopen_at_EOF=False)
+        self.data_it = self.get_sample_it(self.model_config.eval_file, random_dropout=False, reopen_at_EOF=False)
         self.size = self.get_size(self.model_config.eval_file)
 
         print('Test file path: %s' % self.model_config.eval_file)
         print('Finished Data Iter with %s samples.' % str(self.size))
-
-
-    def get_size(self, data_file):
-        return len(open(data_file, encoding='utf-8').readlines())

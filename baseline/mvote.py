@@ -1,6 +1,6 @@
 """Simple majority vote impl"""
 from preprocess.file_helper import pickle_writer, pickle_reader
-from baseline.dataset_helper import DataSetPaths, AbbrInstanceCollector, process_token, evaluation, InstancePred
+from baseline.dataset_helper import DataSetPaths, AbbrInstanceCollector, process_abbr_token, evaluation, InstancePred
 
 
 def predict_majority_vote(train_counter, test_path):
@@ -19,7 +19,7 @@ def predict_majority_vote(train_counter, test_path):
     idx = 0
     for line in open(test_path):
         for token in line.rstrip('\n').split(" "):
-            items = process_token(token)
+            items = process_abbr_token(token)
             if items is not None:
                 abbr, _, _ = items
                 if abbr in assign_map:

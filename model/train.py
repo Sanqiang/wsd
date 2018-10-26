@@ -1,5 +1,6 @@
 from tensorflow.keras.utils import Progbar
 from data_generator.data import TrainData
+from model import test
 from model.graph import Graph
 
 import tensorflow as tf
@@ -15,7 +16,7 @@ from model.model_config import DummyConfig, BaseConfig, VocBaseConfig
 import sys
 
 from model.test import evaluate_on_testsets
-from model.utils import get_feed, get_feed_cui, get_session_config
+from data_generator.data import get_feed, get_feed_cui, get_session_config
 
 sys.path.insert(0,'/zfs1/hdaqing/saz31/wsd/wsd_code')
 
@@ -34,9 +35,9 @@ def list_config(config):
 
 def train(model_config):
     print(list_config(model_config))
-    train_data = TrainData(model_config)
+    train_dataloader = TrainData(model_config)
 
-    graph = Graph(True, model_config, train_data)
+    graph = Graph(True, model_config, train_dataloader)
     graph.create_model_multigpu()
     print('Built Model Done!')
 
@@ -61,7 +62,6 @@ def train(model_config):
                 ckpt_path, available_vars,
                 ignore_missing_vars=True, reshape_variables=False)
 
-    print('Start training')
 
     with tf.train.MonitoredTrainingSession(
         checkpoint_dir=model_config.logdir,
@@ -85,22 +85,30 @@ def train(model_config):
 
         perplexitys = []
         start_time = datetime.now()
+        epoch = 0
         previous_step = 0
         previous_step_cui = 0
         while True:
-            progbar = Progbar(target=train_data.size)
+            epoch += 1
+            progbar = Progbar(target=train_dataloader.size)
             # Train task
             for _ in range(model_config.task_iter_steps):
-                input_feed, _, _ = get_feed(graph.data_feeds, train_data, model_config, True)
-                fetches = [graph.train_op, graph.increment_global_step_task, graph.increment_global_step,
+                batch_start_time = time.time()
+                input_feed, _, targets = get_feed(graph.data_feeds, train_dataloader, model_config, True)
+                print('\nLoad data, time=%s' % str(time.time()-batch_start_time))
+                fetches = [graph.train_op,
+                           graph.increment_global_step_task,
+                           graph.increment_global_step,
                            graph.global_step_task,
                            graph.perplexity,
                            graph.loss]
 
+                batch_start_time = time.time()
                 _, _, _, step, perplexity, loss = sess.run(fetches, input_feed)
-                perplexitys.append(perplexity)
+                print('\nForward and backward, time=%s' % str(time.time()-batch_start_time))
 
-                progbar.update(current=step * model_config.batch_size, values=[('loss', loss), ('ppl', perplexity)])
+                perplexitys.append(perplexity)
+                progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])
 
                 if (step - previous_step) > model_config.model_print_freq:
                     end_time = datetime.now()
@@ -112,17 +120,25 @@ def train(model_config):
                     perplexitys.clear()
                     previous_step = step
 
-                # instance_collections = evaluate_on_testsets(sess, graph, train_data)
+                # evaluate after a few steps
+                if step and step % 5000 == 0:
+                    test.evaluate_and_write_to_disk(sess, graph, train_dataloader,
+                                                    output_file_path=model_config.logdir + 'test_score.csv',
+                                                    epoch=epoch, step=step,loss=loss,perplexity=perplexity
+                                                    )
 
             # Fine tune CUI
             if model_config.extra_loss:
                 for _ in range(model_config.cui_iter_steps):
-                    input_feed = get_feed_cui(graph.obj_cui, train_data, model_config)
+                    input_feed = get_feed_cui(graph.obj_cui, train_dataloader, model_config)
+
                     fetches = [graph.train_op_cui, graph.increment_global_step_cui, graph.increment_global_step,
                                graph.global_step_cui,
                                graph.perplexity_cui,
                                graph.loss_cui]
+
                     _, _, _, step, perplexity, loss = sess.run(fetches, input_feed)
+
                     if (step - previous_step_cui) > model_config.model_print_freq:
                         end_time = datetime.now()
                         time_span = end_time - start_time
@@ -135,10 +151,12 @@ def train(model_config):
 
 
 if __name__ == '__main__':
+    config = None
     if args.mode == 'dummy':
-        train(DummyConfig())
+        config = DummyConfig()
     elif args.mode == 'base':
-        train(BaseConfig())
+        config = BaseConfig()
     elif args.mode == 'voc':
-        train(VocBaseConfig())
+        config = VocBaseConfig()
 
+    train(config)
