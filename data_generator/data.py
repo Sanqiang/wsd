@@ -278,14 +278,17 @@ class TrainData(Data):
             objs[i]['masked_words'] = masked_word
         return objs
 
-    def get_sample_it(self, data_file):
-        """Get ffed data from task"""
+    def get_sample_it(self, data_file, reopen_at_EOF=True):
+        """Get ffed data from task
+        reopen_at_EOF: a boolean indicating whether we reopen file after reaching the end of file
+         usually True for training and False for testing
+        """
         i = 0
         f = open(data_file, 'r')
         while True:
-            # if i >= self.size:
-            #     i = 0
-            #     f = open(data_file, 'r')
+            if i >= self.size and reopen_at_EOF:
+                i = 0
+                f = open(data_file, 'r')
 
             line = f.readline()
             if rd.random() < 0.5 or i >= self.size:
@@ -313,7 +316,7 @@ class EvalData(TrainData):
         for attribute in  abbr_attributes + context_attributes + cui_attributes:
             setattr(self, attribute, getattr(train_data, attribute, None))
 
-        self.data_it = self.get_sample_it(self.model_config.eval_file)
+        self.data_it = self.get_sample_it(self.model_config.eval_file, reopen_at_EOF=False)
         self.size = self.get_size(self.model_config.eval_file)
 
         print('Test file path: %s' % self.model_config.eval_file)
