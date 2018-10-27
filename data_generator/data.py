@@ -1,4 +1,4 @@
-import dataset_helper
+from baseline import dataset_helper
 from data_generator.vocab import Vocab
 from util.constant import NONTAR, UNK, BOS, EOS, PAD
 import random as rd
@@ -154,7 +154,7 @@ def get_feed_cui(obj, data, model_config):
 
 def get_session_config():
     config = tf.ConfigProto(allow_soft_placement=True)
-    # config.log_device_placement = True
+    config.log_device_placement = True
     config.gpu_options.allocator_type = "BFC"
     config.gpu_options.allow_growth = True
     return config

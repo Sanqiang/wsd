@@ -2,6 +2,7 @@ from tensorflow.keras.utils import Progbar
 from data_generator.data import TrainData
 from model import test
 from model.graph import Graph
+from tensorflow.python.client import timeline
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -70,6 +71,10 @@ def train(model_config):
         hooks=[tf.train.CheckpointSaverHook(
             model_config.logdir, save_secs=model_config.save_model_secs, saver=graph.saver)]
     ) as sess:
+
+        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_metadata = tf.RunMetadata()
+
         if model_config.warm_start:
             partial_restore_ckpt(sess)
             print('Warm start with ckpt %s' % model_config.warm_start)
@@ -104,8 +109,19 @@ def train(model_config):
                            graph.loss]
 
                 batch_start_time = time.time()
-                _, _, _, step, perplexity, loss = sess.run(fetches, input_feed)
+                _, _, _, step, perplexity, loss = sess.run(fetches, input_feed,
+                                                           options=run_options,
+                                                           run_metadata=run_metadata)
+
                 print('\nForward and backward, time=%s' % str(time.time()-batch_start_time))
+
+                # Create the Timeline object, and write it to a json
+                tl = timeline.Timeline(run_metadata.step_stats)
+                ctf = tl.generate_chrome_trace_format()
+                with open('timeline.json', 'w') as f:
+                    f.write(ctf)
+
+                exit()
 
                 perplexitys.append(perplexity)
                 progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])

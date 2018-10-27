@@ -24,15 +24,25 @@ from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceColl
 
 
 def evaluate_and_write_to_disk(sess, graph, train_dataloader, output_file_path,
-                               epoch, step, loss, perplexity):
+                               epoch=0, step=0, loss=0.0, perplexity=0.0):
     instance_collections = evaluate_on_testsets(sess, graph, train_dataloader)
+
+    score_names_to_report = ['accuracy', 'accuracy_capable']
     with open(output_file_path, 'a') as score_csv_file:
+        # write header
         if os.path.getsize(output_file_path) == 0:
             line = ','.join([str(i) for i in ['epoch', 'step', 'loss', 'perplexity']])
             for testset_name, (_, _, score_dict) in instance_collections.items():
-                line += ',%s_%s' % (testset_name, '')
+                for score_name in score_names_to_report:
+                    line += ',%s_%s' % (testset_name, score_name)
             line += '\n'
             score_csv_file.write(line)
+
+        line = ','.join([str(i) for i in [epoch, step, loss, perplexity]])
+        for testset_name, (_, _, score_dict) in instance_collections.items():
+            for score_name in score_names_to_report:
+                line += ',%.6f' % (score_dict[score_name])
+        line += '\n'
 
 
 def predict_from_model(sess, graph, test_dataloader, data_config):
@@ -41,16 +51,16 @@ def predict_from_model(sess, graph, test_dataloader, data_config):
     progbar = Progbar(target=test_dataloader.size)
 
     while True:
-        input_feed, excluded_count, gt_targets = get_feed(graph.data_feeds, test_dataloader, data_config, False)
+        input_feed, excluded_count, targets = get_feed(graph.data_feeds, test_dataloader, data_config, False)
         fetches = [graph.data_feeds[0]['pred'], graph.loss, graph.global_step,
                    graph.perplexity, graph.losses_eval]
         preds, loss, _, perplexity, losses_eval = sess.run(fetches, input_feed)
 
-        progbar.update(current=gt_targets[-1]['line_id'],
+        progbar.update(current=targets[-1]['line_id'],
                        values=[('loss', loss), ('ppl', perplexity)])
 
         for example_id in range(data_config.batch_size - excluded_count):
-            gt_target = gt_targets[example_id]
+            gt_target = targets[example_id]
             pred = preds[example_id]
             instance_collection_pred.append(
                 InstancePred(
@@ -139,9 +149,8 @@ def predict_from_checkpoint(model_config, ckpt):
     )
     graph.saver.restore(sess, ckpt)
 
-    instance_collections = evaluate_on_testsets(sess, graph, train_data)
-
-    return instance_collections
+    # instance_collections = evaluate_on_testsets(sess, graph, train_data)
+    evaluate_and_write_to_disk(sess, graph, train_data, output_file_path=model_config.logdir)
 
 
 def eval(model_config, ckpt):
@@ -284,4 +293,4 @@ if __name__ == '__main__':
     #####################################
     # testing (using standard evaluation pipeline)
     #####################################
-    test_pred = predict_from_checkpoint(model_config, ckpt_path)
+    predict_from_checkpoint(model_config, ckpt_path)
