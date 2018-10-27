@@ -69,7 +69,9 @@ def train(model_config):
         save_checkpoint_secs=model_config.save_model_secs,
         config=get_session_config(),
         hooks=[tf.train.CheckpointSaverHook(
-            model_config.logdir, save_secs=model_config.save_model_secs, saver=graph.saver)]
+            model_config.logdir,
+            save_secs=model_config.save_model_secs,
+            saver=graph.saver)]
     ) as sess:
 
         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
@@ -121,7 +123,8 @@ def train(model_config):
                 with open('timeline.json', 'w') as f:
                     f.write(ctf)
 
-                exit()
+                if step == 2:
+                    exit()
 
                 perplexitys.append(perplexity)
                 progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])

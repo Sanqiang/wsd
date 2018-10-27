@@ -275,7 +275,7 @@ class Graph(BaseGraph):
 
 
     def create_model_multigpu(self):
-        with tf.device('/cpu:0'):
+        with tf.Graph().as_default(), tf.device('/cpu:0'):
             self.losses = []
             self.data_feeds = []
             optim = get_optim(self.model_config)
@@ -296,7 +296,7 @@ class Graph(BaseGraph):
                     np_mask = np.loadtxt(self.model_config.abbr_mask_file)
                     self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
 
-                with tf.device('/gpu:0'):
+                # with tf.device('/gpu:0'):
                     self.global_step = tf.train.get_or_create_global_step()
                     self.increment_global_step = tf.assign_add(self.global_step, 1)
 
@@ -320,18 +320,20 @@ class Graph(BaseGraph):
 
             with tf.variable_scope(tf.get_variable_scope()):
                 for gpu_id in range(self.model_config.num_gpus):
-                    with tf.device('/device:GPU:%d' % gpu_id):
+                    with tf.device('/gpu:%d' % gpu_id):
                         with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
+                            # print('Creating graph on /device:GPU:%d' % gpu_id)
+                            # print('name_scope: %s_%d' % ('gpu_scope', gpu_id))
+                            print('Building Model for GPU%s' % gpu_id)
                             loss, data_feed = self.create_model()
-                            print('Built Model for GPU%s' % gpu_id)
                             tf.get_variable_scope().reuse_variables()
                             self.losses.append(loss)
                             self.data_feeds.append(data_feed)
 
-            with tf.device('/gpu:0'):
-                # Add graph for cui
-                if self.model_config.extra_loss and self.is_train:
-                    self.create_model_cui()
+            # with tf.device('/gpu:0'):
+            #     # Add graph for cui
+            #     if self.model_config.extra_loss and self.is_train:
+            #         self.create_model_cui()
 
             with tf.variable_scope('optimization'):
                 self.loss = tf.divide(tf.add_n(self.losses), self.model_config.num_gpus)
