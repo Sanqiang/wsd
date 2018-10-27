@@ -63,7 +63,6 @@ def train(model_config):
                 ckpt_path, available_vars,
                 ignore_missing_vars=True, reshape_variables=False)
 
-
     with tf.train.MonitoredTrainingSession(
         checkpoint_dir=model_config.logdir,
         save_checkpoint_secs=model_config.save_model_secs,
@@ -123,8 +122,8 @@ def train(model_config):
                 with open('timeline.json', 'w') as f:
                     f.write(ctf)
 
-                if step == 2:
-                    exit()
+                # if step == 2:
+                #     exit()
 
                 perplexitys.append(perplexity)
                 progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])
@@ -140,8 +139,8 @@ def train(model_config):
                     previous_step = step
 
                 # evaluate after a few steps
-                if step and step % 5000 == 0:
-                    test.evaluate_and_write_to_disk(sess, graph, train_dataloader,
+                if step and step % 2 == 0:
+                    test.evaluate_and_write_to_disk(sess, graph, model_config, train_dataloader,
                                                     output_file_path=model_config.logdir + 'test_score.csv',
                                                     epoch=epoch, step=step,loss=loss,perplexity=perplexity
                                                     )

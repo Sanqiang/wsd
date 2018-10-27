@@ -275,7 +275,7 @@ class Graph(BaseGraph):
 
 
     def create_model_multigpu(self):
-        with tf.Graph().as_default(), tf.device('/cpu:0'):
+        with tf.device('/cpu:0'):
             self.losses = []
             self.data_feeds = []
 
@@ -339,12 +339,11 @@ class Graph(BaseGraph):
                 self.loss = tf.divide(tf.add_n(self.losses), self.model_config.num_gpus)
                 self.perplexity = tf.exp(tf.reduce_mean(self.loss))
 
-                if self.is_train:
-                    self.train_op = optimizer.minimize(self.loss, global_step=self.global_step)
-                    self.increment_global_step_task = tf.assign_add(
-                        self.global_step_task, 1)
-                else:
-                    self.losses_eval = self.losses[0] # In eval, single cpu/gpu is used.
+                # if self.is_train:
+                self.train_op = optimizer.minimize(self.loss, global_step=self.global_step)
+                self.increment_global_step_task = tf.assign_add(self.global_step_task, 1)
+                # else:
+                self.losses_eval = self.losses[0] # In eval, single cpu/gpu is used.
 
                 self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
@@ -526,12 +525,8 @@ class Graph(BaseGraph):
                     loss_lm = -tf.reduce_mean(tf.reduce_sum(masked_contexts_output*masked_words_output, axis=-1))
                     loss += loss_lm
 
-                if not self.is_train:
-
-                    if self.model_config.mode == 'dummy':
-                        pred = tf.nn.top_k(logits, k=3, sorted=True)[1]
-                    else:
-                        pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
+                # if not self.is_train:
+                pred = tf.nn.top_k(logits, k=5, sorted=True)[1]
                 tf.get_variable_scope().reuse_variables()
 
         data_feed = {
@@ -540,8 +535,8 @@ class Graph(BaseGraph):
             'sense_inp': sense_inp,
         }
 
-        if not self.is_train:
-            data_feed['pred'] = pred
+        # if not self.is_train:
+        data_feed['pred'] = pred
         if self.model_config.hub_module_embedding:
             data_feed['text_input'] = text_input
         if self.model_config.lm_mask_rate:

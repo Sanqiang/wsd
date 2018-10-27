@@ -23,9 +23,9 @@ from model.model_config import get_args, BaseConfig
 from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceCollector, evaluation
 
 
-def evaluate_and_write_to_disk(sess, graph, train_dataloader, output_file_path,
+def evaluate_and_write_to_disk(sess, graph, model_config, train_dataloader, output_file_path,
                                epoch=0, step=0, loss=0.0, perplexity=0.0):
-    instance_collections = evaluate_on_testsets(sess, graph, train_dataloader)
+    instance_collections = evaluate_on_testsets(sess, graph, model_config, train_dataloader)
 
     score_names_to_report = ['accuracy', 'accuracy_capable']
     with open(output_file_path, 'a') as score_csv_file:
@@ -38,11 +38,12 @@ def evaluate_and_write_to_disk(sess, graph, train_dataloader, output_file_path,
             line += '\n'
             score_csv_file.write(line)
 
-        line = ','.join([str(i) for i in [epoch, step, loss, perplexity]])
+        line = '%d,%d,%.4f,%.4f' % (epoch, step, np.average(loss), perplexity)
         for testset_name, (_, _, score_dict) in instance_collections.items():
             for score_name in score_names_to_report:
-                line += ',%.6f' % (score_dict[score_name])
+                line += ',%.4f' % (score_dict[score_name])
         line += '\n'
+        score_csv_file.write(line)
 
 
 def predict_from_model(sess, graph, test_dataloader, data_config):
@@ -93,10 +94,11 @@ def predict_from_model(sess, graph, test_dataloader, data_config):
     return instance_collection_pred
 
 
-def evaluate_on_testsets(sess, graph, train_data):
+def evaluate_on_testsets(sess, graph, model_config, train_data):
     test_instance_collections = {}
+    dataset_paths = DataSetPaths(model_config.environment)
 
-    for test_dataset_name in ['msh', 'share', 'mimic']:
+    for test_dataset_name in ['msh', 'share']: # ['msh', 'share', 'mimic']:
         print('Evaluating on %s' % test_dataset_name)
 
         if test_dataset_name == 'share':
@@ -276,7 +278,6 @@ class TestBaseConfig(BaseConfig):
 
 if __name__ == '__main__':
     args = get_args()
-    dataset_paths = DataSetPaths(args.environment)
 
     model_config = BaseConfig()
 
