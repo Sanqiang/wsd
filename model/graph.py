@@ -278,38 +278,29 @@ class Graph(BaseGraph):
         with tf.Graph().as_default(), tf.device('/cpu:0'):
             self.losses = []
             self.data_feeds = []
-            optim = get_optim(self.model_config)
 
             with tf.variable_scope('shared'):
-                with tf.device('/cpu:0'):
-                    # Vocab embedding
-                    self.embs = tf.get_variable(
-                        'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
-                        initializer=tf.contrib.layers.xavier_initializer(),
-                        trainable=self.model_config.train_emb) # tf.random_uniform_initializer(-0.1, 0.1)
-                    if self.model_config.init_emb:
-                        print('Use init embedding from %s' % self.model_config.init_emb)
-                        self.embs_init_fn = self.embs.assign(
-                            tf.convert_to_tensor(np.load(self.model_config.init_emb), dtype=tf.float32))
+                # Vocab embedding
+                self.embs = tf.get_variable(
+                    'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
+                    initializer=tf.contrib.layers.xavier_initializer(),
+                    trainable=self.model_config.train_emb) # tf.random_uniform_initializer(-0.1, 0.1)
+                if self.model_config.init_emb:
+                    print('Use init embedding from %s' % self.model_config.init_emb)
+                    self.embs_init_fn = self.embs.assign(
+                        tf.convert_to_tensor(np.load(self.model_config.init_emb), dtype=tf.float32))
 
-                    # Mask for only predict candidate senses
-                    np_mask = np.loadtxt(self.model_config.abbr_mask_file)
-                    self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
+                # Mask for only predict candidate senses
+                np_mask = np.loadtxt(self.model_config.abbr_mask_file)
+                self.mask_embs = tf.convert_to_tensor(np_mask, dtype=tf.float32)
 
-                # with tf.device('/gpu:0'):
-                    self.global_step = tf.train.get_or_create_global_step()
-                    self.increment_global_step = tf.assign_add(self.global_step, 1)
-
-                    self.global_step_task = tf.get_variable(
-                        'global_step_task', initializer=tf.constant(0, dtype=tf.int64), trainable=False)
-
-                    # tf.hub text modeling always has 512 dimension vector
-                    project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
-                    self.sense_embs = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
-                                                 initializer=tf.contrib.layers.xavier_initializer()) # tf.random_uniform_initializer(-0.1, 0.1)
-                    if self.model_config.predict_mode == 'clas':
-                        self.sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
-                                                          initializer=tf.contrib.layers.xavier_initializer())
+                # tf.hub text modeling always has 512 dimension vector
+                project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
+                self.sense_embs = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
+                                             initializer=tf.contrib.layers.xavier_initializer()) # tf.random_uniform_initializer(-0.1, 0.1)
+                if self.model_config.predict_mode == 'clas':
+                    self.sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
+                                                      initializer=tf.contrib.layers.xavier_initializer())
 
                 # Use tf.hub text modeling
                 self.embed_hub_module = None
@@ -335,12 +326,21 @@ class Graph(BaseGraph):
             #     if self.model_config.extra_loss and self.is_train:
             #         self.create_model_cui()
 
+            optimizer = get_optim(self.model_config)
+
             with tf.variable_scope('optimization'):
+                # with tf.device('/gpu:0'):
+                self.global_step = tf.train.get_or_create_global_step()
+                self.increment_global_step = tf.assign_add(self.global_step, 1)
+
+                self.global_step_task = tf.get_variable(
+                    'global_step_task', initializer=tf.constant(0, dtype=tf.int64), trainable=False)
+
                 self.loss = tf.divide(tf.add_n(self.losses), self.model_config.num_gpus)
                 self.perplexity = tf.exp(tf.reduce_mean(self.loss))
 
                 if self.is_train:
-                    self.train_op = optim.minimize(self.loss)
+                    self.train_op = optimizer.minimize(self.loss, global_step=self.global_step)
                     self.increment_global_step_task = tf.assign_add(
                         self.global_step_task, 1)
                 else:
