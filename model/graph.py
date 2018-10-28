@@ -309,43 +309,41 @@ class Graph(BaseGraph):
                     self.embed_hub_module = hub.Module(
                         'https://tfhub.dev/google/universal-sentence-encoder-large/3', name='embed_hub')
 
-            with tf.variable_scope(tf.get_variable_scope()):
-                for gpu_id in range(self.model_config.num_gpus):
-                    with tf.device('/gpu:%d' % gpu_id):
-                        with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
-                            # print('Creating graph on /device:GPU:%d' % gpu_id)
-                            # print('name_scope: %s_%d' % ('gpu_scope', gpu_id))
-                            print('Building Model for GPU%s' % gpu_id)
-                            loss, data_feed = self.create_model()
-                            tf.get_variable_scope().reuse_variables()
-                            self.losses.append(loss)
-                            self.data_feeds.append(data_feed)
+        with tf.variable_scope(tf.get_variable_scope()):
+            for gpu_id in range(self.model_config.num_gpus):
+                with tf.device('/gpu:%d' % gpu_id):
+                    with tf.name_scope('%s_%d' % ('gpu_scope', gpu_id)):
+                        print('Building Model for GPU%s' % gpu_id)
+                        loss, data_feed = self.create_model()
+                        tf.get_variable_scope().reuse_variables()
+                        self.losses.append(loss)
+                        self.data_feeds.append(data_feed)
 
             # with tf.device('/gpu:0'):
             #     # Add graph for cui
             #     if self.model_config.extra_loss and self.is_train:
             #         self.create_model_cui()
 
-            optimizer = get_optim(self.model_config)
+        optimizer = get_optim(self.model_config)
 
-            with tf.variable_scope('optimization'):
-                # with tf.device('/gpu:0'):
-                self.global_step = tf.train.get_or_create_global_step()
-                self.increment_global_step = tf.assign_add(self.global_step, 1)
+        with tf.variable_scope('optimization'):
+            # with tf.device('/gpu:0'):
+            self.global_step = tf.train.get_or_create_global_step()
+            self.increment_global_step = tf.assign_add(self.global_step, 1)
 
-                self.global_step_task = tf.get_variable(
-                    'global_step_task', initializer=tf.constant(0, dtype=tf.int64), trainable=False)
+            self.global_step_task = tf.get_variable(
+                'global_step_task', initializer=tf.constant(0, dtype=tf.int64), trainable=False)
 
-                self.loss = tf.divide(tf.add_n(self.losses), self.model_config.num_gpus)
-                self.perplexity = tf.exp(tf.reduce_mean(self.loss))
+            self.loss = tf.divide(tf.add_n(self.losses), self.model_config.num_gpus)
+            self.perplexity = tf.exp(tf.reduce_mean(self.loss))
 
-                # if self.is_train:
-                self.train_op = optimizer.minimize(self.loss, global_step=self.global_step)
-                self.increment_global_step_task = tf.assign_add(self.global_step_task, 1)
-                # else:
-                self.losses_eval = self.losses[0] # In eval, single cpu/gpu is used.
+            # if self.is_train:
+            self.train_op = optimizer.minimize(self.loss, global_step=self.global_step)
+            self.increment_global_step_task = tf.assign_add(self.global_step_task, 1)
+            # else:
+            self.losses_eval = self.losses[0] # In eval, single cpu/gpu is used.
 
-                self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
+            self.saver = tf.train.Saver(write_version=tf.train.SaverDef.V2)
 
 
     def get_logits(self, query_vector, cand_mask):
@@ -424,7 +422,9 @@ class Graph(BaseGraph):
                 # Abbr embedding
                 if self.model_config.abbr_mode == 'abbr':
                     self.abbr_embs = tf.get_variable(
-                        'abbr_embs', [len(self.data.id2abbr), self.model_config.dimension], tf.float32,
+                        'abbr_embs',
+                        [len(self.data.id2abbr), self.model_config.dimension],
+                        tf.float32,
                         initializer=tf.contrib.layers.xavier_initializer()) # tf.random_uniform_initializer(-0.08, 0.08)
 
                 if self.model_config.lm_mask_rate:

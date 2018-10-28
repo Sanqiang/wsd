@@ -119,7 +119,7 @@ def train(model_config):
                 # Create the Timeline object, and write it to a json
                 tl = timeline.Timeline(run_metadata.step_stats)
                 ctf = tl.generate_chrome_trace_format()
-                with open('timeline.json', 'w') as f:
+                with open('timeline/timeline.json', 'w') as f:
                     f.write(ctf)
 
                 # if step == 2:
@@ -139,7 +139,7 @@ def train(model_config):
                     previous_step = step
 
                 # evaluate after a few steps
-                if step and step % 2 == 0:
+                if step and step % 2000 == 0:
                     test.evaluate_and_write_to_disk(sess, graph, model_config, train_dataloader,
                                                     output_file_path=model_config.logdir + 'test_score.csv',
                                                     epoch=epoch, step=step,loss=loss,perplexity=perplexity

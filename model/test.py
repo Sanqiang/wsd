@@ -98,7 +98,7 @@ def evaluate_on_testsets(sess, graph, model_config, train_data):
     test_instance_collections = {}
     dataset_paths = DataSetPaths(model_config.environment)
 
-    for test_dataset_name in ['msh', 'share']: # ['msh', 'share', 'mimic']:
+    for test_dataset_name in ['msh', 'share', 'mimic']: # ['msh', 'share', 'mimic']:
         print('Evaluating on %s' % test_dataset_name)
 
         if test_dataset_name == 'share':

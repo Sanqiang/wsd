@@ -24,8 +24,8 @@ class DataSetPaths:
         # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
         # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 
-        self.share_txt = get_path('../wsd_data/share/processed/share_all_processed_small.txt', env=environment)
-        self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed_small.txt', env=environment)
+        self.share_txt = get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
+        self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)
 
         # paths for processed files
         self.mimic_train_folder = get_path('../wsd_data/mimic/processed/train/', env=environment)
