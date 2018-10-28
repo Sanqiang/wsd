@@ -8,8 +8,8 @@ import re
 import tqdm
 import json
 from collections import defaultdict
-from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover
-from preprocess.text_helper import TextProcessor, CoreNLPTokenizer
+from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover, recover_upper_cui
+from preprocess.text_helper import TextProcessor, CoreNLPTokenizer, TextTokenFilter
 from preprocess.file_helper import txt_reader, txt_writer, json_writer
 
 
@@ -111,7 +111,7 @@ def sub_deid_patterns_umn(txt):
 
 # Load UMN DataSet
 def load_umn(umn_file_path, remove_umn_senses=True):
-    dataset_file = []
+    instance_list = []
     umn_txt = []
     umn_file_original = txt_reader(umn_file_path, encoding="latin-1")
 
@@ -121,9 +121,9 @@ def load_umn(umn_file_path, remove_umn_senses=True):
         if remove_umn_senses and is_umn_senses(sense):
             continue
         else:
-            dataset_file.append((abbr, sense, start))
+            instance_list.append((abbr, sense, start))
             umn_txt.append(items[6])
-    return dataset_file, umn_txt
+    return instance_list, umn_txt
 
 
 def load_cleaned_sense_inventory(inventory_file_path):
@@ -139,9 +139,9 @@ def load_cleaned_sense_inventory(inventory_file_path):
 
 
 # Build sense inventory
-def sense_inventory_umn(dataset_file):
+def sense_inventory_umn(instance_list):
     sense_inventory = defaultdict(list)
-    for items in dataset_file:
+    for items in instance_list:
         abbr = items[0]
         sense = items[1]
         if sense not in sense_inventory[abbr]:
@@ -164,22 +164,42 @@ def map_longform2cui(lf2cui_dict, long_form_set):
     return lf2cui, lf2cui_valid
 
 
-def add_annotation_umn(sense_inventory, txt_list):
-    print("Processing annotations...")
+def add_abbr_marker_umn(txt_list, abbr_marker="abbr-abbr"):
+    """
+    Add a abbr instance marker before tokenizer.
 
+    :param txt_list:
+    :param abbr_marker:
+    :return:
+    """
     docs_procs = []
-    for items, doc in zip(dataset_file, txt_list):
-        abbr = items[0]
-        sense = items[1]
-        # <todo> zhimeng: use CUI to replace long form
-        start = int(items[2])
-
+    for items, doc in zip(instance_list, txt_list):
+        abbr, start = items[0], int(items[2])
         doc_processed = "".join([
             doc[:start],
-            " abbr|%s|%s" % (abbr, sense),
+            " %s " % abbr_marker,
             doc[start+len(abbr):]
         ])
         docs_procs.append(doc_processed)
+    return docs_procs
+
+
+def add_annotation_umn(sense_inventory, txt_list):
+    """
+    Replace abbr markers to abbr instance format (abbr|AB|C1234567).
+
+    :param sense_inventory:
+    :param txt_list:
+    :return:
+    """
+    docs_procs = []
+    for items, doc in zip(instance_list, txt_list):
+        abbr, long_form = items[0], items[1]
+        # use CUI to replace long form
+        sense = sense_inventory[abbr][long_form]
+        if sense is not None:
+            doc_processed = re.sub(r"abbr\-abbr", " abbr|%s|%s " % (abbr, sense), doc)
+            docs_procs.append(doc_processed)
     return docs_procs
 
 
@@ -194,10 +214,8 @@ if __name__ == '__main__':
     # Build sense inventory
     #############################
 
-    dataset_file, umn_txt = load_umn(umn_path+"/AnonymizedClinicalAbbreviationsAndAcronymsDataSet.txt")
-    long_form2cui_our = load_cleaned_sense_inventory(data_path+"/final_cleaned_sense_inventory.json")
-
-    UMN_sense_inventory = sense_inventory_umn(dataset_file)
+    instance_list, umn_txt = load_umn(umn_path+"/AnonymizedClinicalAbbreviationsAndAcronymsDataSet.txt")
+    UMN_sense_inventory = sense_inventory_umn(instance_list)
 
     # save sense inventory to json
     json_writer(UMN_sense_inventory, umn_processed_path+"/UMN_sense_inventory.json")
@@ -231,19 +249,31 @@ if __name__ == '__main__':
                 UMN_sense_cui_inventory[abbr][long_form] = None
     json_writer(UMN_sense_cui_inventory, umn_processed_path+"/UMN_sense_cui_inventory.json")
 
-    print()
+    #############################
+    # Process UMN documents
+    #############################
 
-    # #############################
-    # # Process MSH documents (only one word abbrs)
-    # #############################
-    # msh_txt_annotated = add_annotation_msh(MSH_sense_inventory_one_word, msh_path)
-    #
-    # #######################################
-    # # Tokenize
-    # #######################################
-    #
-    # tokenizer = CoreNLPTokenizer()
-    # msh_txt_tokenized = tokenizer.process_texts(msh_txt_annotated, n_jobs=10)
-    #
-    # # Write to file
-    # txt_writer(msh_txt_tokenized, msh_processed_path+"/msh_processed.txt")
+    umn_txt_marked = add_abbr_marker_umn(umn_txt)
+
+    # Initialize processor and tokenizer
+    processor = TextProcessor([
+        white_space_remover,
+        sub_deid_patterns_umn])
+
+    toknizer = CoreNLPTokenizer()
+    token_filter = TextTokenFilter()
+    filter_processor = TextProcessor([
+        token_filter,
+        repeat_non_word_remover,
+        recover_upper_cui_umn])
+
+    # pre-processing
+    umn_txt = processor.process_texts(umn_txt_marked, n_jobs=30)
+    # tokenizing
+    umn_txt_tokenized = toknizer.process_texts(umn_txt, n_jobs=30)
+    # add real annotations
+    umn_txt_annotated = add_annotation_umn(UMN_sense_cui_inventory, umn_txt_tokenized)
+    # Filter trivial tokens and Remove repeat non-words
+    umn_txt_filtered = filter_processor.process_texts(umn_txt_annotated, n_jobs=30)
+    # Write to file
+    txt_writer(umn_txt_filtered, umn_processed_path+"/umn_processed.txt")
