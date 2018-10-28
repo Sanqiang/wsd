@@ -1,3 +1,5 @@
+import os
+
 from tensorflow.keras.utils import Progbar
 from data_generator.data import TrainData
 from model import test
@@ -98,7 +100,7 @@ def train(model_config):
             epoch += 1
             progbar = Progbar(target=train_dataloader.size)
             # Train task
-            for _ in range(model_config.task_iter_steps):
+            for batch_count in range(model_config.task_iter_steps):
                 batch_start_time = time.time()
                 input_feed, _, targets = get_feed(graph.data_feeds, train_dataloader, model_config, True)
                 print('\nLoad data, time=%s' % str(time.time()-batch_start_time))
@@ -110,6 +112,8 @@ def train(model_config):
                            graph.loss]
 
                 batch_start_time = time.time()
+
+                # steps (number of lines) may not be contiguous integers
                 _, _, _, step, perplexity, loss = sess.run(fetches, input_feed,
                                                            options=run_options,
                                                            run_metadata=run_metadata)
@@ -117,13 +121,14 @@ def train(model_config):
                 print('\nForward and backward, time=%s' % str(time.time()-batch_start_time))
 
                 # Create the Timeline object, and write it to a json
-                tl = timeline.Timeline(run_metadata.step_stats)
-                ctf = tl.generate_chrome_trace_format()
-                with open('timeline/timeline.json', 'w') as f:
-                    f.write(ctf)
-
-                # if step == 2:
-                #     exit()
+                if batch_count % 1000 == 0:
+                    tl = timeline.Timeline(run_metadata.step_stats)
+                    ctf = tl.generate_chrome_trace_format()
+                    if not os.path.exists(model_config.logdir + 'timeline/'):
+                        os.makedirs(model_config.logdir + 'timeline/')
+                    with open(model_config.logdir +
+                              'timeline/timeline_batch-%d.json' % batch_count, 'w') as f:
+                        f.write(ctf)
 
                 perplexitys.append(perplexity)
                 progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])
@@ -139,7 +144,8 @@ def train(model_config):
                     previous_step = step
 
                 # evaluate after a few steps
-                if step and step % 2000 == 0:
+                eval_frequency = 2000
+                if batch_count and batch_count % eval_frequency == 0:
                     test.evaluate_and_write_to_disk(sess, graph, model_config, train_dataloader,
                                                     output_file_path=model_config.logdir + 'test_score.csv',
                                                     epoch=epoch, step=step,loss=loss,perplexity=perplexity
