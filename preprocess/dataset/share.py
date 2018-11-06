@@ -106,7 +106,7 @@ if __name__ == '__main__':
     ######################################
 
     # File paths
-    data_path = "/home/luoz3/data"
+    data_path = "/home/luoz3/wsd_data"
     share_path = data_path + "/share/original"
     share_processed_path = data_path + "/share/processed"
     os.makedirs(share_processed_path, exist_ok=True)

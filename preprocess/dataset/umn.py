@@ -206,7 +206,7 @@ def add_annotation_umn(sense_inventory, txt_list):
 if __name__ == '__main__':
 
     # File paths
-    data_path = "/home/luoz3/data"
+    data_path = "/home/luoz3/wsd_data"
     umn_path = data_path + "/umn"
     umn_processed_path = data_path + "/umn/umn_processed"
 

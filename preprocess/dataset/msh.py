@@ -57,7 +57,7 @@ def find_abbrs(csv_file):
 if __name__ == '__main__':
 
     # File paths
-    data_path = "/home/luoz3/data"
+    data_path = "/home/luoz3/wsd_data"
     msh_path = data_path + "/msh/MSHCorpus"
     msh_processed_path = data_path + "/msh/msh_processed"
 
