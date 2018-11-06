@@ -198,7 +198,7 @@ def add_annotation_umn(sense_inventory, txt_list):
         # use CUI to replace long form
         sense = sense_inventory[abbr][long_form]
         if sense is not None:
-            doc_processed = re.sub(r"abbr\-abbr", " abbr|%s|%s " % (abbr, sense), doc)
+            doc_processed = re.sub(r"abbr-abbr", " abbr|%s|%s " % (abbr, sense), doc)
             docs_procs.append(doc_processed)
     return docs_procs
 
@@ -265,7 +265,7 @@ if __name__ == '__main__':
     filter_processor = TextProcessor([
         token_filter,
         repeat_non_word_remover,
-        recover_upper_cui_umn])
+        recover_upper_cui])
 
     # pre-processing
     umn_txt = processor.process_texts(umn_txt_marked, n_jobs=30)

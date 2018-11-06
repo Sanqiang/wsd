@@ -126,7 +126,7 @@ def get_path(file_path, env='sys'):
     elif env == 'crc':
         return '/zfs1/hdaqing/saz31/wsd/wsd_perf/tmp/' + file_path
     elif env == 'luoz3':
-        return '/home/luoz3/wsd_result/tmp/' + file_path
+        return '/home/luoz3/wsd/' + file_path
     elif env == 'mengr':
         return os.path.dirname(os.path.abspath(__file__)) + '/../' + file_path
     elif env == 'aws_mengr':

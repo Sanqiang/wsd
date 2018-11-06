@@ -15,23 +15,26 @@ class DataSetPaths:
     Paths of DataSets
     """
     def __init__(self, environment):
-        # data_path = '/home/luoz3/data/'
 
         # DataSet Corpus files
-        self.mimic_train_txt = get_path('../wsd_data/mimic/train', env=environment)
-        self.mimic_eval_txt = get_path('../wsd_data/mimic/eval', env=environment)
+        self.mimic_train_txt = "/exp_data/wsd_data/mimic/train"
+        self.mimic_eval_txt = "/exp_data/wsd_data/mimic/eval"
+        # self.mimic_train_txt = get_path('../wsd_data/mimic/train', env=environment)
+        # self.mimic_eval_txt = get_path('../wsd_data/mimic/eval', env=environment)
         # # mimic v1 (deprecated)
         # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
         # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 
         self.share_txt = get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
         self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)
+        self.umn_txt = get_path('../wsd_data/umn/umn_processed/umn_processed.txt', env=environment)
 
         # paths for processed files
         self.mimic_train_folder = get_path('../wsd_data/mimic/processed/train/', env=environment)
         self.mimic_test_folder = get_path('../wsd_data/mimic/processed/test/', env=environment)
         self.share_test_folder = get_path('../wsd_data/share/processed/test/', env=environment)
         self.msh_test_folder = get_path('../wsd_data/msh/msh_processed/test/', env=environment)
+        self.umn_test_folder = get_path('../wsd_data/umn/umn_processed/test/', env=environment)
 
 
 def process_abbr_token(token):
@@ -238,7 +241,7 @@ def evaluation(instance_collection_true, instance_collection_pred):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths()
+    dataset_paths = DataSetPaths('luoz3')
     train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
 
     # # build train collectors
@@ -256,11 +259,13 @@ if __name__ == '__main__':
     mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
     share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
     msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
 
     # generate test counters
     mimic_test_counter = mimic_test_collector.generate_counter()
     share_counter = share_collector.generate_counter()
     msh_counter = msh_collector.generate_counter()
+    umn_counter = umn_collector.generate_counter()
 
     # compare dataset intersections
     print("Intersection on MIMIC test: ")
@@ -269,6 +274,8 @@ if __name__ == '__main__':
     compare_dataset_summary(mimic_train_counter, share_counter)
     print("Intersection on msh: ")
     compare_dataset_summary(mimic_train_counter, msh_counter)
+    print("Intersection on umn: ")
+    compare_dataset_summary(mimic_train_counter, umn_counter)
 
     # compare mapping instances
     print("Compare instances...")
@@ -280,5 +287,8 @@ if __name__ == '__main__':
 
     msh_overlap, msh_all, msh_has_abbr = compare_dataset_instances(mimic_train_counter, msh_counter)
     print("msh (all: %d, has abbr no cui: %d, overlap: %d): %f" % (msh_all, msh_has_abbr, msh_overlap, msh_overlap / msh_all))
+
+    umn_overlap, umn_all, umn_has_abbr = compare_dataset_instances(mimic_train_counter, umn_counter)
+    print("umn (all: %d, has abbr no cui: %d, overlap: %d): %f" % (umn_all, umn_has_abbr, umn_overlap, umn_overlap / umn_all))
 
     print()

@@ -195,7 +195,7 @@ def generate_test_content(test_processed_path, train_processed_path):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths()
+    dataset_paths = DataSetPaths('luoz3')
 
     generate_train_content(dataset_paths.mimic_train_folder)
 

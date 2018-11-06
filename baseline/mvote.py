@@ -59,7 +59,7 @@ def evaluate_score_majority_vote(train_counter, test_path):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths()
+    dataset_paths = DataSetPaths('luoz3')
     train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
 
     # # process train abbr info
