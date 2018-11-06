@@ -13,6 +13,7 @@ import multiprocessing as mp
 from joblib import Parallel, delayed
 from pycorenlp import StanfordCoreNLP
 from util import constant
+from baseline.dataset_helper import process_abbr_token
 
 
 class TokenHelper(object):
@@ -93,7 +94,7 @@ class TextTokenFilter(object):
         if self.remove_repeat:
             ntokens = []
             for token_id, token in enumerate(tokens):
-                if token.isalpha() or token_id == 0 or tokens[token_id-1] != token:
+                if token.isalpha() or process_abbr_token(token) or token_id == 0 or tokens[token_id-1] != token:
                     ntokens.append(token)
             return " ".join(ntokens)
         else:

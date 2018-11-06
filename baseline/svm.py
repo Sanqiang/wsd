@@ -187,7 +187,7 @@ def predict_svm(test_processed_path, train_processed_path):
                     instance_collection.append(InstancePred(
                         index=global_instance_idx,
                         abbr=abbr,
-                        sense_pred='CUI-not-found'
+                        sense_pred=None
                     ))
                 # if only have 1 CUI
                 elif len(label2idx) == 1:
@@ -234,36 +234,48 @@ if __name__ == '__main__':
 
     # train_svm(dataset_paths.mimic_train_folder)
 
-    #####################################
-    # testing (directly compute score, not using standard pipeline)
-    #####################################
-    print("SVM on MIMIC test: ")
-    evaluate_score_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
-    print("SVM on ShARe/CLEF: ")
-    evaluate_score_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    print("SVM on MSH: ")
-    evaluate_score_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    # #####################################
+    # # testing (directly compute score, not using standard pipeline)
+    # #####################################
+    # print("SVM on MIMIC test: ")
+    # evaluate_score_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
+    # print("SVM on ShARe/CLEF: ")
+    # evaluate_score_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    # print("SVM on MSH: ")
+    # evaluate_score_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
 
-    # #####################################
-    # # testing (using standard evaluation pipeline)
-    # #####################################
-    #
-    # # load test sets
+    #####################################
+    # testing (using standard evaluation pipeline)
+    #####################################
+
+    # load test sets
     # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
     # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
     # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    #
+    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+
     # print("SVM on MIMIC test: ")
     # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
     # mimic_test_collection_pred = predict_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
-    # evaluation(mimic_test_collection_true, mimic_test_collection_pred)
+    # print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
     #
     # print("SVM on ShARe/CLEF: ")
     # share_collection_true = share_collector.generate_instance_collection()
     # share_collection_pred = predict_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    # evaluation(share_collection_true, share_collection_pred)
+    # print(evaluation(share_collection_true, share_collection_pred))
     #
     # print("SVM on MSH: ")
     # msh_collection_true = msh_collector.generate_instance_collection()
     # msh_collection_pred = predict_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
-    # evaluation(msh_collection_true, msh_collection_pred)
+    # print(evaluation(msh_collection_true, msh_collection_pred))
+
+    print("SVM on UMN: ")
+    umn_collection_true = umn_collector.generate_instance_collection()
+    umn_collection_pred = predict_svm(dataset_paths.umn_test_folder, dataset_paths.mimic_train_folder)
+    print(evaluation(umn_collection_true, umn_collection_pred))
+
+    print("SVM on UPMC example: ")
+    upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
+    upmc_example_collection_pred = predict_svm(dataset_paths.upmc_example_folder, dataset_paths.mimic_train_folder)
+    print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))

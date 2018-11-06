@@ -65,7 +65,7 @@ if __name__ == '__main__':
     ######################################
 
     # File paths
-    data_path = "/home/luoz3/data"
+    data_path = "/home/luoz3/wsd_data"
     dataset_path = data_path + "/path/to/dataset"
     dataset_processed_path = data_path + "/path/to/dataset/processed"
     os.makedirs(dataset_processed_path, exist_ok=True)

@@ -28,6 +28,7 @@ class DataSetPaths:
         self.share_txt = get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
         self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)
         self.umn_txt = get_path('../wsd_data/umn/umn_processed/umn_processed.txt', env=environment)
+        self.upmc_example_txt = get_path('../wsd_data/upmc/example/processed/upmc_example_processed.txt', env=environment)
 
         # paths for processed files
         self.mimic_train_folder = get_path('../wsd_data/mimic/processed/train/', env=environment)
@@ -35,6 +36,7 @@ class DataSetPaths:
         self.share_test_folder = get_path('../wsd_data/share/processed/test/', env=environment)
         self.msh_test_folder = get_path('../wsd_data/msh/msh_processed/test/', env=environment)
         self.umn_test_folder = get_path('../wsd_data/umn/umn_processed/test/', env=environment)
+        self.upmc_example_folder = get_path('../wsd_data/upmc/example/processed/test/', env=environment)
 
 
 def process_abbr_token(token):
@@ -256,31 +258,35 @@ if __name__ == '__main__':
     dataset_summary(mimic_train_counter)
 
     # build test collectors
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
     share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
     msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
     umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
 
     # generate test counters
-    mimic_test_counter = mimic_test_collector.generate_counter()
+    # mimic_test_counter = mimic_test_collector.generate_counter()
     share_counter = share_collector.generate_counter()
     msh_counter = msh_collector.generate_counter()
     umn_counter = umn_collector.generate_counter()
+    upmc_example_counter = upmc_example_collector.generate_counter()
 
     # compare dataset intersections
-    print("Intersection on MIMIC test: ")
-    compare_dataset_summary(mimic_train_counter, mimic_test_counter)
+    # print("Intersection on MIMIC test: ")
+    # compare_dataset_summary(mimic_train_counter, mimic_test_counter)
     print("Intersection on share: ")
     compare_dataset_summary(mimic_train_counter, share_counter)
     print("Intersection on msh: ")
     compare_dataset_summary(mimic_train_counter, msh_counter)
     print("Intersection on umn: ")
     compare_dataset_summary(mimic_train_counter, umn_counter)
+    print("Intersection on upmc example: ")
+    compare_dataset_summary(mimic_train_counter, upmc_example_counter)
 
     # compare mapping instances
     print("Compare instances...")
-    mimic_test_overlap, mimic_test_all, mimic_test_has_abbr = compare_dataset_instances(mimic_train_counter, mimic_test_counter)
-    print("mimic test (all: %d, has abbr no cui: %d, overlap: %d): %f" % (mimic_test_all, mimic_test_has_abbr, mimic_test_overlap, mimic_test_overlap/mimic_test_all))
+    # mimic_test_overlap, mimic_test_all, mimic_test_has_abbr = compare_dataset_instances(mimic_train_counter, mimic_test_counter)
+    # print("mimic test (all: %d, has abbr no cui: %d, overlap: %d): %f" % (mimic_test_all, mimic_test_has_abbr, mimic_test_overlap, mimic_test_overlap/mimic_test_all))
 
     share_overlap, share_all, share_has_abbr = compare_dataset_instances(mimic_train_counter, share_counter)
     print("share (all: %d, has abbr no cui: %d, overlap: %d): %f" % (share_all, share_has_abbr, share_overlap, share_overlap / share_all))
@@ -290,5 +296,8 @@ if __name__ == '__main__':
 
     umn_overlap, umn_all, umn_has_abbr = compare_dataset_instances(mimic_train_counter, umn_counter)
     print("umn (all: %d, has abbr no cui: %d, overlap: %d): %f" % (umn_all, umn_has_abbr, umn_overlap, umn_overlap / umn_all))
+
+    upmc_example_overlap, upmc_example_all, upmc_example_has_abbr = compare_dataset_instances(mimic_train_counter, upmc_example_counter)
+    print("upmc example (all: %d, has abbr no cui: %d, overlap: %d): %f" % (upmc_example_all, upmc_example_has_abbr, upmc_example_overlap, upmc_example_overlap / upmc_example_all))
 
     print()
