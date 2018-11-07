@@ -1,6 +1,6 @@
 """Simple majority vote impl"""
 from preprocess.file_helper import pickle_writer, pickle_reader
-from baseline.dataset_helper import DataSetPaths, AbbrInstanceCollector, process_abbr_token, evaluation, InstancePred
+from baseline.dataset_helper import DataSetPaths, AbbrInstanceCollector, process_abbr_token, evaluation, InstancePred, save_instance_collection_to_json
 
 
 def predict_majority_vote(train_counter, test_path):
@@ -113,3 +113,4 @@ if __name__ == '__main__':
     upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
     upmc_example_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.upmc_example_txt)
     print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
+    save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_mvote_pred.json")

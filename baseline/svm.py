@@ -11,7 +11,7 @@ from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV
 
 from preprocess.file_helper import pickle_reader, pickle_writer
-from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceCollector, evaluation
+from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceCollector, evaluation, save_instance_collection_to_json
 
 
 def train_sample(x, y, sample_size, random_seed=None):
@@ -279,3 +279,4 @@ if __name__ == '__main__':
     upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
     upmc_example_collection_pred = predict_svm(dataset_paths.upmc_example_folder, dataset_paths.mimic_train_folder)
     print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
+    save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_svm_pred.json")

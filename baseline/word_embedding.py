@@ -144,10 +144,10 @@ def generate_test_files(txt_path, test_processed_path):
 if __name__ == '__main__':
     dataset_paths = DataSetPaths('luoz3')
 
-    # generate_train_files(dataset_paths.mimic_train_txt, dataset_paths.mimic_train_folder)
-    #
-    # generate_test_files(dataset_paths.mimic_eval_txt, dataset_paths.mimic_test_folder)
-    # generate_test_files(dataset_paths.msh_txt, dataset_paths.msh_test_folder)
-    # generate_test_files(dataset_paths.share_txt, dataset_paths.share_test_folder)
+    generate_train_files(dataset_paths.mimic_train_txt, dataset_paths.mimic_train_folder)
+
+    generate_test_files(dataset_paths.mimic_eval_txt, dataset_paths.mimic_test_folder)
+    generate_test_files(dataset_paths.msh_txt, dataset_paths.msh_test_folder)
+    generate_test_files(dataset_paths.share_txt, dataset_paths.share_test_folder)
     generate_test_files(dataset_paths.umn_txt, dataset_paths.umn_test_folder)
     generate_test_files(dataset_paths.upmc_example_txt, dataset_paths.upmc_example_folder)

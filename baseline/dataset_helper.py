@@ -4,6 +4,7 @@ Helper functions for processed DataSet files.
 """
 
 import tqdm
+import json
 from collections import Counter, defaultdict, namedtuple
 
 from model.model_config import get_path
@@ -209,7 +210,13 @@ Instance = namedtuple('Instance', ['index', 'abbr', 'sense', 'long_form'])
 InstancePred = namedtuple('InstancePred', ['index', 'abbr', 'sense_pred'])
 
 
-def evaluation(instance_collection_true, instance_collection_pred):
+def save_instance_collection_to_json(instance_collection: list, json_path: str):
+    with open(json_path, 'w') as file:
+        for instance in instance_collection:
+            file.write(json.dumps(instance._asdict())+'\n')
+
+
+def evaluation(instance_collection_true: list, instance_collection_pred: list):
     """
     Evaluate accuracy based on instance collections.
 
