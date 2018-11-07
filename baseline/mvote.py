@@ -83,26 +83,26 @@ if __name__ == '__main__':
     #####################################
 
     # load test sets
-    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
     umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
 
-    # print("Mvote on MIMIC test: ")
-    # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
-    # mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
-    # evaluation(mimic_test_collection_true, mimic_test_collection_pred)
-    #
-    # print("Mvote on ShARe/CLEF: ")
-    # share_collection_true = share_collector.generate_instance_collection()
-    # share_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.share_txt)
-    # evaluation(share_collection_true, share_collection_pred)
-    #
-    # print("Mvote on MSH: ")
-    # msh_collection_true = msh_collector.generate_instance_collection()
-    # msh_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
-    # evaluation(msh_collection_true, msh_collection_pred)
+    print("Mvote on MIMIC test: ")
+    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
+    print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+
+    print("Mvote on ShARe/CLEF: ")
+    share_collection_true = share_collector.generate_instance_collection()
+    share_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.share_txt)
+    print(evaluation(share_collection_true, share_collection_pred))
+
+    print("Mvote on MSH: ")
+    msh_collection_true = msh_collector.generate_instance_collection()
+    msh_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
+    print(evaluation(msh_collection_true, msh_collection_pred))
 
     print("Mvote on UMN: ")
     umn_collection_true = umn_collector.generate_instance_collection()

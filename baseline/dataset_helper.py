@@ -195,7 +195,14 @@ def compare_dataset_instances(counter_train, counter_test):
                 count_no_abbr_instances += count
             elif cui in counter_train[abbr]:
                 count_overlap_instances += count
-    return count_overlap_instances, count_all_instances, count_all_instances-count_no_abbr_instances
+
+    result_dict = {
+        "overlap_ratio": count_overlap_instances / count_all_instances,
+        "num_overlap": count_overlap_instances,
+        "num_has_abbr_no_cui": count_all_instances-count_no_abbr_instances,
+        "num_total": count_all_instances
+    }
+    return result_dict
 
 
 Instance = namedtuple('Instance', ['index', 'abbr', 'sense', 'long_form'])
@@ -258,22 +265,22 @@ if __name__ == '__main__':
     dataset_summary(mimic_train_counter)
 
     # build test collectors
-    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
     share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
     msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
     umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
 
     # generate test counters
-    # mimic_test_counter = mimic_test_collector.generate_counter()
+    mimic_test_counter = mimic_test_collector.generate_counter()
     share_counter = share_collector.generate_counter()
     msh_counter = msh_collector.generate_counter()
     umn_counter = umn_collector.generate_counter()
     upmc_example_counter = upmc_example_collector.generate_counter()
 
     # compare dataset intersections
-    # print("Intersection on MIMIC test: ")
-    # compare_dataset_summary(mimic_train_counter, mimic_test_counter)
+    print("Intersection on MIMIC test: ")
+    compare_dataset_summary(mimic_train_counter, mimic_test_counter)
     print("Intersection on share: ")
     compare_dataset_summary(mimic_train_counter, share_counter)
     print("Intersection on msh: ")
@@ -284,20 +291,19 @@ if __name__ == '__main__':
     compare_dataset_summary(mimic_train_counter, upmc_example_counter)
 
     # compare mapping instances
-    print("Compare instances...")
-    # mimic_test_overlap, mimic_test_all, mimic_test_has_abbr = compare_dataset_instances(mimic_train_counter, mimic_test_counter)
-    # print("mimic test (all: %d, has abbr no cui: %d, overlap: %d): %f" % (mimic_test_all, mimic_test_has_abbr, mimic_test_overlap, mimic_test_overlap/mimic_test_all))
+    print("Compare instances on MIMIC test:")
+    print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
 
-    share_overlap, share_all, share_has_abbr = compare_dataset_instances(mimic_train_counter, share_counter)
-    print("share (all: %d, has abbr no cui: %d, overlap: %d): %f" % (share_all, share_has_abbr, share_overlap, share_overlap / share_all))
+    print("Compare instances on ShARe/CLEF:")
+    print(compare_dataset_instances(mimic_train_counter, share_counter))
 
-    msh_overlap, msh_all, msh_has_abbr = compare_dataset_instances(mimic_train_counter, msh_counter)
-    print("msh (all: %d, has abbr no cui: %d, overlap: %d): %f" % (msh_all, msh_has_abbr, msh_overlap, msh_overlap / msh_all))
+    print("Compare instances on MSH:")
+    print(compare_dataset_instances(mimic_train_counter, msh_counter))
 
-    umn_overlap, umn_all, umn_has_abbr = compare_dataset_instances(mimic_train_counter, umn_counter)
-    print("umn (all: %d, has abbr no cui: %d, overlap: %d): %f" % (umn_all, umn_has_abbr, umn_overlap, umn_overlap / umn_all))
+    print("Compare instances on UMN:")
+    print(compare_dataset_instances(mimic_train_counter, umn_counter))
 
-    upmc_example_overlap, upmc_example_all, upmc_example_has_abbr = compare_dataset_instances(mimic_train_counter, upmc_example_counter)
-    print("upmc example (all: %d, has abbr no cui: %d, overlap: %d): %f" % (upmc_example_all, upmc_example_has_abbr, upmc_example_overlap, upmc_example_overlap / upmc_example_all))
+    print("Compare instances on UPMC example:")
+    print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
 
     print()
