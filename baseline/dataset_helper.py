@@ -8,7 +8,7 @@ import json
 from collections import Counter, defaultdict, namedtuple
 
 from model.model_config import get_path
-from preprocess.file_helper import pickle_writer, txt_reader, pickle_reader
+from preprocess.file_helper import pickle_writer, txt_reader, pickle_reader, json_writer
 
 
 class DataSetPaths:
@@ -206,6 +206,39 @@ def compare_dataset_instances(counter_train, counter_test):
     return result_dict
 
 
+def overlap_analysis(counter_train: dict, counter_test: dict):
+    overlap_dict = defaultdict(dict)
+    for abbr, items in counter_test.items():
+        # rank for each cui in testset
+        count_test_abbr_instances = 0
+        test_cui_rank_dict = {}
+        for idx, (cui, count) in enumerate(items.most_common()):
+            count_test_abbr_instances += count
+            test_cui_rank_dict[cui] = idx + 1
+
+        if abbr in counter_train:
+            # rank for each cui in trainset
+            count_train_abbr_instances = 0
+            train_cui_rank_dict = {}
+            for idx, (cui, count) in enumerate(counter_train[abbr].most_common()):
+                count_train_abbr_instances += count
+                train_cui_rank_dict[cui] = idx + 1
+
+            temp_abbr_dict = {}
+            for cui, count in items.most_common():
+                if cui in counter_train[abbr]:
+                    temp_abbr_dict[cui] = {
+                        "trainset sense rank": train_cui_rank_dict[cui],
+                        "trainset sense count": counter_train[abbr][cui],
+                        "trainset sense ratio": counter_train[abbr][cui]/count_train_abbr_instances,
+                        "testset sense rank": test_cui_rank_dict[cui],
+                        "testset sense count": count,
+                        "testset sense ratio": count/count_test_abbr_instances
+                    }
+            overlap_dict[abbr] = temp_abbr_dict
+    return overlap_dict
+
+
 Instance = namedtuple('Instance', ['index', 'abbr', 'sense', 'long_form'])
 InstancePred = namedtuple('InstancePred', ['index', 'abbr', 'sense_pred'])
 
@@ -267,50 +300,52 @@ if __name__ == '__main__':
     # read train counter from file
     mimic_train_counter = pickle_reader(train_counter_path)
 
-    # summary of training set
-    print("Summary of MIMIC train:")
-    dataset_summary(mimic_train_counter)
+    # # summary of training set
+    # print("Summary of MIMIC train:")
+    # dataset_summary(mimic_train_counter)
 
     # build test collectors
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
 
     # generate test counters
-    mimic_test_counter = mimic_test_collector.generate_counter()
-    share_counter = share_collector.generate_counter()
-    msh_counter = msh_collector.generate_counter()
-    umn_counter = umn_collector.generate_counter()
+    # mimic_test_counter = mimic_test_collector.generate_counter()
+    # share_counter = share_collector.generate_counter()
+    # msh_counter = msh_collector.generate_counter()
+    # umn_counter = umn_collector.generate_counter()
     upmc_example_counter = upmc_example_collector.generate_counter()
 
-    # compare dataset intersections
-    print("Intersection on MIMIC test: ")
-    compare_dataset_summary(mimic_train_counter, mimic_test_counter)
-    print("Intersection on share: ")
-    compare_dataset_summary(mimic_train_counter, share_counter)
-    print("Intersection on msh: ")
-    compare_dataset_summary(mimic_train_counter, msh_counter)
-    print("Intersection on umn: ")
-    compare_dataset_summary(mimic_train_counter, umn_counter)
+    # # compare dataset intersections
+    # print("Intersection on MIMIC test: ")
+    # compare_dataset_summary(mimic_train_counter, mimic_test_counter)
+    # print("Intersection on share: ")
+    # compare_dataset_summary(mimic_train_counter, share_counter)
+    # print("Intersection on msh: ")
+    # compare_dataset_summary(mimic_train_counter, msh_counter)
+    # print("Intersection on umn: ")
+    # compare_dataset_summary(mimic_train_counter, umn_counter)
     print("Intersection on upmc example: ")
     compare_dataset_summary(mimic_train_counter, upmc_example_counter)
-
-    # compare mapping instances
-    print("Compare instances on MIMIC test:")
-    print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
-
-    print("Compare instances on ShARe/CLEF:")
-    print(compare_dataset_instances(mimic_train_counter, share_counter))
-
-    print("Compare instances on MSH:")
-    print(compare_dataset_instances(mimic_train_counter, msh_counter))
-
-    print("Compare instances on UMN:")
-    print(compare_dataset_instances(mimic_train_counter, umn_counter))
-
+    #
+    # # compare mapping instances
+    # print("Compare instances on MIMIC test:")
+    # print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
+    #
+    # print("Compare instances on ShARe/CLEF:")
+    # print(compare_dataset_instances(mimic_train_counter, share_counter))
+    #
+    # print("Compare instances on MSH:")
+    # print(compare_dataset_instances(mimic_train_counter, msh_counter))
+    #
+    # print("Compare instances on UMN:")
+    # print(compare_dataset_instances(mimic_train_counter, umn_counter))
+    #
     print("Compare instances on UPMC example:")
     print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
 
+    upmc_overlap = overlap_analysis(mimic_train_counter, upmc_example_counter)
+    json_writer(upmc_overlap, dataset_paths.upmc_example_folder+"/upmc_overlap.json")
     print()
