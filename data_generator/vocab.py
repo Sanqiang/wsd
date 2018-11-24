@@ -14,7 +14,6 @@ class Vocab:
             if vocab_path is not None:
                 self.populate_subword_vocab()
 
-
     def populate_subword_vocab(self):
         self.subword = SubwordTextEncoder(self.vocab_path)
         print('Subword Vocab Populated with size %d for path %s.'
@@ -48,7 +47,8 @@ class Vocab:
             if cnt >= mincount:
                 self.w2i[w] = len(self.i2w)
                 self.i2w.append(w)
-
+        self.i2w.append(constant.PAD)
+        self.w2i[constant.PAD] = len(self.w2i)
         print('Vocab Populated with size %d including %d reserved vocab for path %s.'
               % (len(self.i2w), constant.REVERED_VOCAB_SIZE, self.vocab_path))
 
@@ -57,7 +57,10 @@ class Vocab:
             if w in self.w2i:
                 return self.w2i[w]
             else:
-                return self.w2i[constant.UNK]
+                if constant.UNK in self.w2i:
+                    return self.w2i[constant.UNK]
+                else:
+                    return self.w2i[constant.PAD]
         else:
             return self.subword.encode(w)
 

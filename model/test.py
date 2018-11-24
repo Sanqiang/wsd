@@ -19,7 +19,7 @@ from datetime import datetime
 from os.path import exists, join
 from os import makedirs, listdir, remove
 
-from model.model_config import get_args, BaseConfig
+from model.model_config import get_args, BaseConfig, VocBaseConfig, SubvocBaseConfig
 from baseline.dataset_helper import DataSetPaths, InstancePred, AbbrInstanceCollector, evaluation
 
 
@@ -98,7 +98,7 @@ def evaluate_on_testsets(sess, graph, model_config, train_data):
     test_instance_collections = {}
     dataset_paths = DataSetPaths(model_config.environment)
 
-    for test_dataset_name in ['msh', 'share', 'mimic']: # ['msh', 'share', 'mimic']:
+    for test_dataset_name in ['msh', 'share', 'mimic', 'umn', 'upmc']: # ['msh', 'share', 'mimic']:
         print('Evaluating on %s' % test_dataset_name)
 
         if test_dataset_name == 'share':
@@ -107,11 +107,23 @@ def evaluate_on_testsets(sess, graph, model_config, train_data):
             test_filepath = dataset_paths.msh_txt
         elif test_dataset_name == 'mimic':
             test_filepath = dataset_paths.mimic_eval_txt
+        elif test_dataset_name == 'umn':
+            test_filepath = dataset_paths.umn_txt
+        elif test_dataset_name == 'upmc':
+            test_filepath = dataset_paths.upmc_example_txt
         else:
             raise ValueError('Please type valid dataset name')
 
         # test file path
-        data_config = BaseConfig()
+        if args.mode == 'base':
+            data_config = BaseConfig()
+        elif args.mode == 'voc':
+            data_config = VocBaseConfig()
+        elif args.mode == 'subvoc':
+            data_config = SubvocBaseConfig()
+        else:
+            raise NotImplementedError('error mode')
+
         setattr(data_config, 'eval_file', test_filepath)
 
         test_collector = AbbrInstanceCollector(test_filepath)
@@ -149,10 +161,34 @@ def predict_from_checkpoint(model_config, ckpt):
     sess = tf.train.MonitoredTrainingSession(
         config=get_session_config()
     )
-    graph.saver.restore(sess, ckpt)
+
+    try:
+        graph.saver.restore(sess, ckpt)
+    except tf.errors.NotFoundError:
+        # Partial restore
+        import tensorflow.contrib.slim as slim
+        var_list = slim.get_variables_to_restore()
+        available_vars = {}
+        reader = tf.train.NewCheckpointReader(ckpt)
+        var_dict = {var.op.name: var for var in var_list}
+        for var in var_dict:
+            if reader.has_tensor(var):
+                var_ckpt = reader.get_tensor(var)
+                var_cur = var_dict[var]
+                if any([var_cur.shape[i] != var_ckpt.shape[i] for i in range(len(var_ckpt.shape))]):
+                    print('Variable %s missing due to shape.', var)
+                else:
+                    available_vars[var] = var_dict[var]
+            else:
+                print('Variable %s missing.', var)
+
+        partial_restore_ckpt = slim.assign_from_checkpoint_fn(
+            ckpt_path, available_vars,
+            ignore_missing_vars=True, reshape_variables=False)
+        partial_restore_ckpt(sess)
 
     # instance_collections = evaluate_on_testsets(sess, graph, train_data)
-    evaluate_and_write_to_disk(sess, graph, train_data, output_file_path=model_config.logdir)
+    evaluate_and_write_to_disk(sess, graph, model_config, train_data, output_file_path=model_config.logdir)
 
 
 def eval(model_config, ckpt):
@@ -279,11 +315,17 @@ class TestBaseConfig(BaseConfig):
 if __name__ == '__main__':
     args = get_args()
 
-    model_config = BaseConfig()
+    if args.mode == 'base':
+        model_config = BaseConfig()
+    elif args.mode == 'voc':
+        model_config = VocBaseConfig()
+    elif args.mode == 'subvoc':
+        model_config = SubvocBaseConfig()
+
 
     # ckpt = '/home/zhaos5/projs/wsd/wsd_perf/0930_base_abbrabbr_train_extradef/model/model.ckpt-6434373'
     # ckpt_path = '/exp_data/20181021_base_abbrabbr/model/model.ckpt-4070595'
-    ckpt_path = '/home/memray/Project/upmc/wsd/wsd_perf/1020_clas/log/model.ckpt-65'
+    ckpt_path = '/home/zhaos5/projs/wsd/wsd_perf/voc_base/model/model.ckpt-2291618'
     # ckpt_path = '/Users/memray/Project/upmc_wsd/wsd_perf/1020_clas/log/model.ckpt-2532'
     # #####################################
     # # testing (directly compute score, not using standard pipeline)

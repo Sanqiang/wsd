@@ -6,7 +6,6 @@ import os
 import numpy as np
 import pickle
 from collections import defaultdict
-import nltk
 from nltk.corpus import stopwords
 
 import tensorflow as tf
@@ -122,9 +121,9 @@ def get_feed_cui(obj, data, model_config):
         sample = next(data.data_it_cui)
         tmp_cuiid.append(sample['cui_id'])
         tmp_abbrid.append(sample['abbr_id'])
-        if 'def' in model_config.extra_loss:
+        if 'def' in model_config.extra_mode:
             tmp_extra_cui_def.append(sample['def'])
-        if 'stype' in model_config.extra_loss:
+        if 'stype' in model_config.extra_mode:
             tmp_extra_cui_stype.append(sample['stype'])
         cnt += 1
 
@@ -137,13 +136,13 @@ def get_feed_cui(obj, data, model_config):
         for batch_idx in range(model_config.batch_size)
     ]
 
-    if 'def' in model_config.extra_loss:
+    if 'def' in model_config.extra_mode:
         for step in range(model_config.max_def_len):
             input_feed[obj['def'][step].name] = [
                 tmp_extra_cui_def[batch_idx][step]
                 for batch_idx in range(model_config.batch_size)]
 
-    if 'stype' in model_config.extra_loss:
+    if 'stype' in model_config.extra_mode:
         input_feed[obj['stype'].name] = [
             tmp_extra_cui_stype[batch_idx]
             for batch_idx in range(model_config.batch_size)
@@ -168,7 +167,7 @@ class Data:
         # For Context
         self.voc = Vocab(model_config, model_config.voc_file)
 
-        if 'stype' in model_config.extra_loss or 'def' in model_config.extra_loss:
+        if 'stype' in model_config.extra_mode or 'def' in model_config.extra_mode:
             self.populate_cui()
 
     def populate_abbr(self):
@@ -180,10 +179,15 @@ class Data:
         self.sense2id = dict(zip(self.id2sense, range(len(self.id2sense))))
         self.sen_cnt = len(self.id2sense)
 
+        if self.model_config.extra_mode:
+            self.id2abbr.append(con)
+
+
     def populate_cui(self):
         self.stype2id, self.id2stype = {}, []
         self.id2stype = [stype.split('\t')[0].lower()
                          for stype in open(self.model_config.stype_voc_file).readlines()]
+        self.id2stype.append('unk')
         self.stype2id = dict(zip(self.id2stype, range(len(self.id2stype))))
 
         self.cui2stype = {}
@@ -349,7 +353,7 @@ class TrainData(Data):
             print('Finished Populate Data with %s samples.' % str(len(self.datas)))
         else:
             self.data_it = self.get_sample_it(self.model_config.train_file)
-            if self.model_config.extra_loss:
+            if self.model_config.extra_mode:
                 self.data_it_cui = self.get_cui_sample_it()
             self.size = self.get_size(self.model_config.train_file)
             print('Finished Data Iter with %s samples.' % str(self.size))
@@ -366,8 +370,16 @@ class TrainData(Data):
         while True:
             i = rd.sample(range(len(self.id2sense)), 1)[0]
             cui = self.id2sense[i]
-            sdef = self.cui2def[cui]
-            stype = self.cui2stype[cui]
+            if cui in self.cui2def:
+                sdef = self.cui2def[cui]
+            else:
+                sdef = [self.voc.encode(PAD)] * self.model_config.max_def_len
+
+            if cui in self.cui2stype:
+                stype = self.cui2stype[cui]
+            else:
+                stype = self.stype2id['unk']
+
             for abbr_id in self.cuiud2abbrid[i]:
                 obj = {
                     'abbr_id': abbr_id,

@@ -12,7 +12,7 @@ import numpy as np
 import random as rd
 
 from model.model_config import get_args
-from model.model_config import DummyConfig, BaseConfig, VocBaseConfig
+from model.model_config import DummyConfig, BaseConfig, VocBaseConfig, SubvocBaseConfig
 
 import sys
 
@@ -59,9 +59,9 @@ def train(model_config):
             else:
                 print('Variable %s missing.', var)
 
-            partial_restore_ckpt = slim.assign_from_checkpoint_fn(
-                ckpt_path, available_vars,
-                ignore_missing_vars=True, reshape_variables=False)
+        partial_restore_ckpt = slim.assign_from_checkpoint_fn(
+            ckpt_path, available_vars,
+            ignore_missing_vars=True, reshape_variables=False)
 
     with tf.train.MonitoredTrainingSession(
         checkpoint_dir=model_config.logdir,
@@ -70,7 +70,9 @@ def train(model_config):
         hooks=[tf.train.CheckpointSaverHook(
             model_config.logdir,
             save_secs=model_config.save_model_secs,
-            saver=graph.saver)]
+            saver=graph.saver)],
+        save_summaries_steps=None,
+        save_summaries_secs=None,  # Disable tf.summary
     ) as sess:
 
         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
@@ -85,9 +87,17 @@ def train(model_config):
                 print('Loading previous checkpoint from: %s' % model_config.logdir)
                 graph.saver.restore(sess, ckpt.model_checkpoint_path)
 
-        if model_config.init_emb:
-            sess.run(graph.embs_init_fn)
-            print('init embedding from %s' % model_config.init_emb)
+        if model_config.init_vocab_emb:
+            sess.run(graph.vocab_embs_init_fn)
+            print('init vocab embedding from %s' % model_config.init_vocab_emb)
+
+        if model_config.init_abbr_emb and hasattr(graph, 'abbr_embs_init_fn'):
+            sess.run(graph.abbr_embs_init_fn)
+            print('init abbr embedding from %s' % model_config.init_abbr_emb)
+
+        if model_config.init_cui_emb:
+            sess.run(graph.sense_embs_init_fn)
+            print('init cui embedding from %s' % model_config.init_abbr_emb)
 
         perplexitys = []
         start_time = datetime.now()
@@ -101,7 +111,7 @@ def train(model_config):
             for _ in range(model_config.task_iter_steps):
                 batch_start_time = time.time()
                 input_feed, _, targets = get_feed(graph.data_feeds, train_dataloader, model_config, True)
-                print('\nLoad data, time=%s' % str(time.time()-batch_start_time))
+                # print('\nLoad data, time=%s' % str(time.time()-batch_start_time))
                 fetches = [graph.train_op,
                            graph.increment_global_step_task,
                            graph.increment_global_step,
@@ -114,19 +124,20 @@ def train(model_config):
                                                            options=run_options,
                                                            run_metadata=run_metadata)
 
-                print('\nForward and backward, time=%s' % str(time.time()-batch_start_time))
+                if model_config.progress_bar:
+                    print('\nForward and backward, time=%s' % str(time.time()-batch_start_time))
 
-                # Create the Timeline object, and write it to a json
-                tl = timeline.Timeline(run_metadata.step_stats)
-                ctf = tl.generate_chrome_trace_format()
-                with open('timeline/timeline.json', 'w') as f:
-                    f.write(ctf)
+                    # Create the Timeline object, and write it to a json
+                    tl = timeline.Timeline(run_metadata.step_stats)
+                    ctf = tl.generate_chrome_trace_format()
+                    with open('timeline/timeline.json', 'w') as f:
+                        f.write(ctf)
 
-                # if step == 2:
-                #     exit()
+                    # if step == 2:
+                    #     exit()
 
-                perplexitys.append(perplexity)
-                progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])
+                    perplexitys.append(perplexity)
+                    progbar.update(current=targets[-1]['line_id'], values=[('loss', loss), ('ppl', perplexity)])
 
                 if (step - previous_step) > model_config.model_print_freq:
                     end_time = datetime.now()
@@ -146,7 +157,7 @@ def train(model_config):
                                                     )
 
             # Fine tune CUI
-            if model_config.extra_loss:
+            if model_config.extra_mode:
                 for _ in range(model_config.cui_iter_steps):
                     input_feed = get_feed_cui(graph.obj_cui, train_dataloader, model_config)
 
@@ -176,5 +187,7 @@ if __name__ == '__main__':
         config = BaseConfig()
     elif args.mode == 'voc':
         config = VocBaseConfig()
+    elif args.mode == 'subvoc':
+        config = SubvocBaseConfig()
 
     train(config)

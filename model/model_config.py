@@ -20,6 +20,8 @@ def get_args():
                         help='Result folder?')
     parser.add_argument('-warm', '--warm_start', default='',
                         help='Path for warm start checkpoint?')
+    parser.add_argument('-pb', '--progress_bar', default=False, type=bool,
+                        help='Use Progress bar?')
 
     parser.add_argument('-op', '--optimizer', default='adagrad',
                         help='Which optimizer to use?')
@@ -98,8 +100,8 @@ def get_args():
     parser.add_argument('-test_ckpt', '--test_ckpt', default='',
                         help='Path for test ckpt checkpoint?')
 
-    # Extra Loss
-    parser.add_argument('-eloss', '--extra_loss', default='',
+    # Extra Mode
+    parser.add_argument('-emode', '--extra_mode', default='',
                         help='Extra loss for for better sense understanidng? '
                              'choose from [def, stype], separate by :')
     parser.add_argument('-max_def_len', '--max_def_len', default=100, type=int,
@@ -139,6 +141,7 @@ args = get_args()
 
 
 class DummyConfig():
+    progress_bar = args.progress_bar
     mode = args.mode
     environment = args.environment
     architecture = args.architecture
@@ -197,7 +200,7 @@ class DummyConfig():
     modeldir = get_path('../' + output_folder + '/model/', environment)
     logdir = get_path('../' + output_folder + '/log/', environment)
 
-    extra_loss = [v for v in args.extra_loss.split(':') if len(v)>0]
+    extra_mode = [v for v in args.extra_mode.split(':') if len(v)>0]
 
     task_iter_steps = args.task_iter_steps
     cui_iter_steps = args.cui_iter_steps
@@ -219,23 +222,30 @@ class BaseConfig(DummyConfig):
 
     voc_file = get_path('../wsd_data/mimic/subvocab', env=args.environment)
 
-    train_file = get_path('../wsd_data/mimic/train', env=args.environment)
+    # train_file = get_path('../wsd_data/mimic/train', env=args.environment)
+    train_file = '/exp_data/wsd_data/mimic/train'
     # train_pickle = get_path('../wsd_data/mimic/train.pkl')
-    eval_file = get_path('../wsd_data/mimic/eval', env=args.environment)
+    # eval_file = get_path('../wsd_data/mimic/eval', env=args.environment)
+    eval_file = '/exp_data/wsd_data/mimic/eval'
 
-    abbr_file = get_path('../wsd_data/mimic/abbr', env=args.environment)
-    cui_file = get_path('../wsd_data/mimic/cui', env=args.environment)
-    abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask', env=args.environment)
+    # abbr_file = get_path('../wsd_data/mimic/abbr', env=args.environment)
+    abbr_file = '/exp_data/wsd_data/mimic/abbr'
+    # cui_file = get_path('../wsd_data/mimic/cui', env=args.environment)
+    cui_file = '/exp_data/wsd_data/mimic/cui'
+    # abbr_mask_file = get_path('../wsd_data/mimic/abbr_mask', env=args.environment)
+    abbr_mask_file = '/exp_data/wsd_data/mimic/abbr_mask'
     # abbr_rare_file = get_path('../wsd_data/medline/abbr_rare.txt')
 
-    stype_voc_file = get_path('../wsd_data/mimic/cui_extra_stype.voc', env=args.environment)
-    cui_extra_pkl = get_path('../wsd_data/mimic/cui_extra.pkl', env=args.environment)
+    stype_voc_file = get_path('../../wsd_data/mimic/cui_extra_stype.voc', env=args.environment)
+    # stype_voc_file = '/exp_data/wsd_data/umls/cui_extra_stype.voc'
+    cui_extra_pkl = get_path('../../wsd_data/mimic/cui_extra.pkl', env=args.environment)
+    # cui_extra_pkl = '/exp_data/wsd_data/umls/cui_extra_stype.voc'
 
     # save_model_secs = 600
     # model_print_freq = 1000
     voc_process = args.voc_process.split(':')
 
-    save_model_secs = 1200
+    save_model_secs = 120
     model_print_freq = args.model_print_freq
     task_iter_steps = args.task_iter_steps
     cui_iter_steps = args.cui_iter_steps
@@ -244,7 +254,22 @@ class BaseConfig(DummyConfig):
 class VocBaseConfig(BaseConfig):
     # Use ptr-trained word embedding (rather than subtoken)
     subword_vocab_size = 0
-    voc_file = get_path('../wsd_data/mimic/w2v_vocab')
+    # voc_file = get_path('../wsd_data/mimic/w2v_vocab')
+    voc_file = '/exp_data/wsd_data/pretrained_model/fasttext_dim128_epoch50/vocab'
+    init_vocab_emb = '/exp_data/wsd_data/pretrained_model/fasttext_dim128_epoch50/vocab.vec'
+    init_abbr_emb = '/exp_data/wsd_data/pretrained_model/fasttext_dim128_epoch50/abbr.vec'
+    init_cui_emb = '/exp_data/wsd_data/pretrained_model/fasttext_dim128_epoch50/cui.vec'
 
     train_emb = args.train_emb
-    init_emb = get_path('../wsd_data/mimic/w2v_vectors.npy')
+
+
+class SubvocBaseConfig(BaseConfig):
+    # Use ptr-trained word embedding (rather than subtoken)
+    subword_vocab_size = 50000
+    # voc_file = get_path('../wsd_data/mimic/w2v_vocab')
+    voc_file = '/exp_data/wsd_data/pretrained_model/fasttext_subtok_dim128_epoch100/vocab'
+    init_vocab_emb = '/exp_data/wsd_data/pretrained_model/fasttext_subtok_dim128_epoch100/vocab.vec'
+    init_abbr_emb = '/exp_data/wsd_data/pretrained_model/fasttext_subtok_dim128_epoch100/abbr.vec'
+    init_cui_emb = '/exp_data/wsd_data/pretrained_model/fasttext_subtok_dim128_epoch100/cui.vec'
+
+    train_emb = args.train_emb

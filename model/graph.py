@@ -4,6 +4,8 @@ from util import constant
 from tensor2tensor.layers import common_attention, common_layers
 from tensor2tensor.models.research import universal_transformer_util, universal_transformer
 import numpy as np
+from model.match_utils import NTN
+
 
 def get_optim(model_config):
     learning_rate = tf.constant(model_config.learning_rate)
@@ -105,6 +107,9 @@ class BaseGraph:
         :param bias_mask: [batch_size, context_len]
         :return:
         '''
+        if self.model_config.predict_mode == 'attn':
+            return encoder_outputs
+
         bias_cnt = 1.0 + tf.expand_dims(tf.reduce_sum(bias_mask, axis=-1), axis=-1)
         # [batch_size, context_len, 1]
         bias_mask = tf.expand_dims(bias_mask, axis=-1)
@@ -121,7 +126,12 @@ class BaseGraph:
         if self.model_config.encoder_mode == 'abbr_ut2t':
             aggregate_state = tf.reduce_sum(encoder_outputs, axis=1)
         else:
-            aggregate_state = tf.reduce_sum(encoder_outputs*bias_mask, axis=1)
+            if 'max' in self.model_config.aggregate_mode:
+                aggregate_state = tf.reduce_max(encoder_outputs * bias_mask, axis=1)
+            elif 'avg' in self.model_config.aggregate_mode:
+                aggregate_state = tf.reduce_sum(encoder_outputs*bias_mask, axis=1)
+            else:
+                raise NotImplementedError('unkown aggregate_mode')
             aggregate_state /= bias_cnt
         return aggregate_state
 
@@ -285,10 +295,13 @@ class Graph(BaseGraph):
                     'embs', [self.data.voc.vocab_size(), self.model_config.dimension], tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer(),
                     trainable=self.model_config.train_emb) # tf.random_uniform_initializer(-0.1, 0.1)
-                if self.model_config.init_emb:
-                    print('Use init embedding from %s' % self.model_config.init_emb)
-                    self.embs_init_fn = self.embs.assign(
-                        tf.convert_to_tensor(np.load(self.model_config.init_emb), dtype=tf.float32))
+                if self.model_config.init_vocab_emb:
+                    print('Use init embedding from %s' % self.model_config.init_vocab_emb)
+                    np_emb = np.loadtxt(self.model_config.init_vocab_emb)
+                    if self.model_config.subword_vocab_size <= 0:
+                        np_emb = np.append(np_emb, [[0.0] * 128], axis=0)
+                    self.vocab_embs_init_fn = self.embs.assign(
+                        tf.convert_to_tensor(np_emb, dtype=tf.float32))
 
                 # Mask for only predict candidate senses
                 np_mask = np.loadtxt(self.model_config.abbr_mask_file)
@@ -298,6 +311,9 @@ class Graph(BaseGraph):
                 project_size = self.model_config.dimension + (512 if self.model_config.hub_module_embedding else 0)
                 self.sense_embs = tf.get_variable('proj_w', [project_size, self.data.sen_cnt], tf.float32,
                                              initializer=tf.contrib.layers.xavier_initializer()) # tf.random_uniform_initializer(-0.1, 0.1)
+                self.sense_embs_init_fn = self.sense_embs.assign(
+                    tf.transpose(tf.convert_to_tensor(np.loadtxt(self.model_config.init_cui_emb), dtype=tf.float32)))
+
                 if self.model_config.predict_mode == 'clas':
                     self.sense_bias = tf.get_variable('proj_b', [self.data.sen_cnt], tf.float32,
                                                       initializer=tf.contrib.layers.xavier_initializer())
@@ -319,10 +335,10 @@ class Graph(BaseGraph):
                         self.losses.append(loss)
                         self.data_feeds.append(data_feed)
 
-            # with tf.device('/gpu:0'):
-            #     # Add graph for cui
-            #     if self.model_config.extra_loss and self.is_train:
-            #         self.create_model_cui()
+        # with tf.device('/gpu:0'):
+        #     # Add graph for cui
+        #     if self.model_config.extra_mode and self.is_train:
+        #         self.create_model_cui()
 
         optimizer = get_optim(self.model_config)
 
@@ -382,11 +398,6 @@ class Graph(BaseGraph):
                 cand_mask)
             # logit = Wx+b, [batch_size, num_sense]
             logits = tf.squeeze(tf.matmul(query_vector, proj_w_stack), axis=1) + proj_b_stack
-
-            # add a large negative number to masked part, [batch_size, num_sense]
-            mask_inverse = tf.abs(cand_mask - 1) * -1e12
-            logits = logits + mask_inverse
-
         elif self.model_config.predict_mode == 'match':
             # TODO(@rui,sanqiang), (1) divide module to make it a real cosine similarity
             #  (2) as it is distance, only consider the gradient from matching sense
@@ -397,9 +408,16 @@ class Graph(BaseGraph):
                 cur_embs * tf.tile(
                     aggregate_state_exp, [1, 1, self.data.sen_cnt]), 1)
             logits = entry_stop_gradients(logits, cand_mask)
-
+        elif self.model_config.predict_mode == 'ntn':
+            ntn = NTN(self.model_config, self.data)
+            logits = ntn.get_logits(query_vector, self.sense_embs)
+            logits = entry_stop_gradients(logits, cand_mask)
         else:
             raise ValueError("Unsupported prediction mode.")
+
+        # add a large negative number to masked part, [batch_size, num_sense]
+        mask_inverse = tf.abs(cand_mask - 1) * -1e12
+        logits = logits + mask_inverse
 
         return logits
 
@@ -426,6 +444,8 @@ class Graph(BaseGraph):
                         [len(self.data.id2abbr), self.model_config.dimension],
                         tf.float32,
                         initializer=tf.contrib.layers.xavier_initializer()) # tf.random_uniform_initializer(-0.08, 0.08)
+                    self.abbr_embs_init_fn = self.abbr_embs.assign(
+                        tf.convert_to_tensor(np.loadtxt(self.model_config.init_abbr_emb), dtype=tf.float32))
 
                 if self.model_config.lm_mask_rate:
                     masked_contexts = []
@@ -457,7 +477,7 @@ class Graph(BaseGraph):
                     raise ValueError('Unsupported abbr mode.')
 
                 if self.model_config.architecture == 'context_enc':
-                    context_encoder = ContextEncoder(self.is_train, self.model_config, self.data, self.embs)
+                    context_encoder = ContextEncoder(self.embs, self.data.voc, self.model_config, self.hparams)
                     # [batch_size, 1, emb_dim]
                     abbr_inp_emb = tf.expand_dims(abbr_inp_emb, axis=1)
                     # [batch_size, context_len, emb_dim]
@@ -575,8 +595,14 @@ class Graph(BaseGraph):
                                          self.data.voc.encode(constant.PAD))))
                 defs_embed = tf.nn.dropout(defs_embed,
                                            1.0 - self.hparams.layer_prepostprocess_dropout)
-                defs_output = transformer.transformer_encoder(
+                # defs_output = transformer.transformer_encoder(
+                #     defs_embed, defs_bias, self.hparams)
+                defs_output, def_extra_output = universal_transformer_util.universal_transformer_encoder(
                     defs_embed, defs_bias, self.hparams)
+                def_enc_ponder_times, def_enc_remainders = def_extra_output
+                extra_loss = (
+                        self.hparams.act_loss_weight *
+                        tf.reduce_mean(def_enc_ponder_times + def_enc_remainders))
                 defs_output = tf.reduce_mean(defs_output, axis=1)
                 inputs.append(defs_output)
 
@@ -591,9 +617,10 @@ class Graph(BaseGraph):
                 inputs = inputs[0]
             aggregate_state = tf.contrib.layers.fully_connected(
                 inputs, self.model_config.dimension, activation_fn=None)
-            logits = self.get_logits(aggregate_state,
-                                     tf.ones([self.model_config.batch_size, len(self.data.id2sense)]))
-            self.loss_cui = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp)
+            mask = tf.nn.embedding_lookup(self.mask_embs, abbr_inp)
+            logits = self.get_logits(aggregate_state, mask)
+
+            self.loss_cui = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=sense_inp) + extra_loss
 
             with tf.variable_scope('cui_optimization'):
                 optim = get_optim(self.model_config)

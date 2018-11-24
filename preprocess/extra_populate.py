@@ -6,11 +6,13 @@ import pickle
 from collections import defaultdict, Counter
 
 
-UMLS_DEF = '/Users/sanqiangzhao/git/wsd_data/2018AA/META/MRDEF.RRF'
-UMLS_STYPE = '/Users/sanqiangzhao/git/wsd_data/2018AA/META/MRSTY.RRF'
+UMLS_DEF = '/Users/sanqiangzhao/git/wsd/wsd_data/2018AA/META/MRDEF.RRF'
+UMLS_STYPE = '/Users/sanqiangzhao/git/wsd/wsd_data/2018AA/META/MRSTY.RRF'
+UMLS_ATOM = '/Users/sanqiangzhao/git/wsd/wsd_data/2018AA/META/MRCONSO.RRF'
 
-PATH_INVENTORY_JSON = '/Users/sanqiangzhao/git/wsd_data/mimic/final_cleaned_sense_inventory.json'
-PATH_EXTRA_CUI = '/Users/sanqiangzhao/git/wsd_data/mimic/cui_extra.pkl'
+PATH_EXTRA_DEF = '/exp_data/wsd_data/umls/def.txt'
+PATH_EXTRA_TYPE = '/exp_data/wsd_data/umls/type.txt'
+PATH_EXTRA_ATOM = '/exp_data/wsd_data/umls/atom.txt'
 PATH_EXTRA_CUI_STYPE_VOC = '/Users/sanqiangzhao/git/wsd_data/mimic/cui_extra_stype.voc'
 
 # Get definition
@@ -33,18 +35,14 @@ for line in open(UMLS_STYPE):
     stype_map[cui] = stype
 print('Finish loading stype_map')
 
-# Populate extra information for each CUI
-output = {}
-stype_counter = Counter()
-for line in open(PATH_INVENTORY_JSON):
-    obj = json.loads(line)
-    cui = obj['CUI']
-    output[cui] = (definition_map[cui], stype_map[cui])
-    stype_counter.update([stype_map[cui]])
+# Get Atom
+atom_map = defaultdict(str)
+for line in open(UMLS_ATOM):
+    # Doc: https://www.ncbi.nlm.nih.gov/books/NBK9685/table/ch03.T.concept_names_and_sources_file_mr/
+    items = line.split('|')
+    cui = items[0]
+    atom = items[14]
+    atom_map[cui] += atom + ';'
+print('Finish loading atom')
 
-f_stype_voc = open(PATH_EXTRA_CUI_STYPE_VOC, 'w')
-for w, cnt in stype_counter.most_common():
-    f_stype_voc.write('%s\t%s\n' % (w, str(cnt)))
 
-with open(PATH_EXTRA_CUI, 'wb') as output_file:
-    pickle.dump(output, output_file)

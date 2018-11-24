@@ -1,10 +1,10 @@
 from data_generator.data import EvalData, TrainData
-from dataset_helper import DataSetPaths
+from baseline.dataset_helper import DataSetPaths
 from model.graph import Graph
 from model.train import get_feed, get_session_config
 from util.checkpoint import copy_ckpt_to_modeldir
 
-from model.model_config import DummyConfig, BaseConfig, VocBaseConfig
+from model.model_config import DummyConfig, BaseConfig, VocBaseConfig, SubvocBaseConfig
 
 import tensorflow as tf
 import numpy as np
@@ -35,17 +35,25 @@ def eval(model_config, ckpt):
     )
     graph.saver.restore(sess, ckpt)
 
-    for test_dataset_name in ['share', 'msh', 'mimic']:
+    for test_dataset_name in ['mimic']: #['share', 'msh', 'mimic']:
         if test_dataset_name == 'share':
             test_file = dataset_paths.share_txt
         elif test_dataset_name == 'msh':
             test_file = dataset_paths.msh_txt
-        elif test_dataset_name == 'mimic:':
+        elif test_dataset_name == 'mimic':
             test_file = dataset_paths.mimic_eval_txt
 
-        model_config = BaseConfig()
+        if args.mode == 'base':
+            model_config = BaseConfig()
+        elif args.mode == 'voc':
+            model_config = VocBaseConfig()
+        elif args.mode == 'subvoc':
+            model_config = SubvocBaseConfig()
+        else:
+            raise NotImplementedError('error mode')
+
         setattr(model_config, 'eval_file', test_file)
-        eval_data = EvalData(model_config)
+        eval_data = EvalData(TrainData(model_config), model_config, 'mimic')
 
         perplexitys = []
         total_cnt = 0.0
@@ -64,26 +72,26 @@ def eval(model_config, ckpt):
                 gt_target = gt_targets[batch_id]
                 pred = preds[batch_id]
 
-                if gt_target[2] == pred[0:1] :
+                if gt_target['sense_id'] == pred[0:1] :
                     correct_cnt += 1
-                if gt_target[2] in pred[0:2]:
+                if gt_target['sense_id'] in pred[0:2]:
                     correct_cnt2 += 1
-                if gt_target[2] in pred[0:3]:
+                if gt_target['sense_id'] in pred[0:3]:
                     correct_cnt3 += 1
-                if gt_target[2] in pred[0:4]:
+                if gt_target['sense_id'] in pred[0:4]:
                     correct_cnt4 += 1
-                if gt_target[2] in pred[0:5]:
+                if gt_target['sense_id'] in pred[0:5]:
                     correct_cnt5 += 1
                 total_cnt += 1
 
-                abbr_id = gt_target[1]
+                abbr_id = gt_target['abbr_id']
 
                 report.append('Abbr:%s\tPred:%s\tGt:%s\tline:%s with step %s with loss %s.' %
                               (eval_data.id2abbr[abbr_id],
                                ';'.join([eval_data.id2sense[loop] for loop in pred]),
-                               eval_data.id2sense[gt_target[2]],
-                               gt_target[3],
-                               gt_target[0],
+                               eval_data.id2sense[gt_target['sense_id']],
+                               gt_target['line_id'],
+                               gt_target['pos_id'],
                                losses_eval[batch_id]))
 
                 report.append('')
@@ -142,7 +150,6 @@ if __name__ == '__main__':
                 else:
                     return None
 
-    dataset_paths = DataSetPaths()
 
     if args.mode == 'dummy':
         model_config = DummyConfig()
@@ -178,8 +185,15 @@ if __name__ == '__main__':
                 else:
                     for fl in glob.glob(ckpt + '*'):
                         remove(fl)
-    elif args.mode == 'voc':
-        model_config = VocBaseConfig()
+    elif args.mode == 'voc' or args.mode == 'subvoc':
+        if args.mode == 'voc':
+            model_config = VocBaseConfig()
+        elif args.mode == 'subvoc':
+            model_config = SubvocBaseConfig()
+        else:
+            raise ValueError('args mode error.')
+
+        dataset_paths = DataSetPaths(model_config.environment)
         best_acc = get_best_acc(model_config)
         while True:
             ckpt = get_ckpt(model_config.modeldir, model_config.logdir)
