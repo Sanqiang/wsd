@@ -5,10 +5,10 @@ Helper functions for processed DataSet files.
 
 import tqdm
 import json
-from collections import Counter, defaultdict, namedtuple
+from collections import Counter, defaultdict, namedtuple, OrderedDict
 
 from model.model_config import get_path
-from preprocess.file_helper import pickle_writer, txt_reader, pickle_reader, json_writer
+from preprocess.file_helper import pickle_writer, txt_reader, pickle_reader, json_writer, json_reader
 
 
 class DataSetPaths:
@@ -26,10 +26,10 @@ class DataSetPaths:
         # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
         # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 
-        self.share_txt = '/exp_data/wsd_data/share/processed/share_all_processed.txt' # get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
-        self.msh_txt = '/exp_data/wsd_data/msh/msh_processed/msh_processed.txt' # get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)
-        self.umn_txt = '/exp_data/wsd_data/umn/umn_processed.txt' # get_path('../wsd_data/umn/umn_processed/umn_processed.txt', env=environment)
-        self.upmc_example_txt = '/exp_data/wsd_data/upmc/upmc_example_processed.txt' # get_path('../wsd_data/upmc/example/processed/upmc_example_processed.txt', env=environment)
+        self.share_txt = get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
+        self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)
+        self.umn_txt = get_path('../wsd_data/umn/umn_processed/umn_processed.txt', env=environment)
+        self.upmc_example_txt = get_path('../wsd_data/upmc/example/processed/upmc_example_processed.txt', env=environment)
 
         # paths for processed files
         self.mimic_train_folder = get_path('../wsd_data/mimic/processed/train/', env=environment)
@@ -146,14 +146,14 @@ class AbbrInstanceCollector:
 # Comparision between Corpus
 ###################################
 
-def get_cui_set(counter):
+def get_cui_set(counter: dict):
     cui_set = []
     for _, cuis in counter.items():
         cui_set.extend(list(cuis))
     return set(cui_set)
 
 
-def dataset_summary(counter):
+def dataset_summary(counter: dict):
     abbrs = counter.keys()
     print("No.abbrs: ", len(abbrs))
 
@@ -170,7 +170,14 @@ def dataset_summary(counter):
     return abbrs, cui_set, count_all_instances
 
 
-def compare_dataset_summary(counter_train, counter_test):
+def generate_sense_inventory_json_by_counter(counter: dict, json_path: str):
+    counter_ordered = {}
+    for key in counter:
+        counter_ordered[key] = OrderedDict(counter[key].most_common())
+    json_writer(counter_ordered, json_path)
+
+
+def compare_dataset_summary(counter_train: dict, counter_test: dict):
     # collect CUIs
     cui_set_train = get_cui_set(counter_train)
     cui_set_test = get_cui_set(counter_test)
@@ -185,7 +192,7 @@ def compare_dataset_summary(counter_train, counter_test):
     print()
 
 
-def compare_dataset_instances(counter_train, counter_test):
+def compare_dataset_instances(counter_train: dict, counter_test: dict):
     count_all_instances = 0
     count_no_abbr_instances = 0
     count_overlap_instances = 0
@@ -285,7 +292,6 @@ def evaluation(instance_collection_true: list, instance_collection_pred: list):
                   'num_total': count_total,
                   'num_capable_total': count_capable_total,
     }
-
     return score_dict
 
 
@@ -299,24 +305,32 @@ if __name__ == '__main__':
 
     # read train counter from file
     mimic_train_counter = pickle_reader(train_counter_path)
+    generate_sense_inventory_json_by_counter(mimic_train_counter, dataset_paths.mimic_train_folder+'mimic_train_inventory.json')
 
     # # summary of training set
     # print("Summary of MIMIC train:")
     # dataset_summary(mimic_train_counter)
 
     # build test collectors
-    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
 
     # generate test counters
-    # mimic_test_counter = mimic_test_collector.generate_counter()
-    # share_counter = share_collector.generate_counter()
-    # msh_counter = msh_collector.generate_counter()
-    # umn_counter = umn_collector.generate_counter()
+    mimic_test_counter = mimic_test_collector.generate_counter()
+    share_counter = share_collector.generate_counter()
+    msh_counter = msh_collector.generate_counter()
+    umn_counter = umn_collector.generate_counter()
     upmc_example_counter = upmc_example_collector.generate_counter()
+
+    # generate sense inventories
+    generate_sense_inventory_json_by_counter(mimic_test_counter, dataset_paths.mimic_test_folder + 'mimic_test_inventory.json')
+    generate_sense_inventory_json_by_counter(share_counter, dataset_paths.share_test_folder + 'share_inventory.json')
+    generate_sense_inventory_json_by_counter(msh_counter, dataset_paths.msh_test_folder + 'msh_inventory.json')
+    generate_sense_inventory_json_by_counter(umn_counter, dataset_paths.umn_test_folder + 'umn_inventory.json')
+    generate_sense_inventory_json_by_counter(upmc_example_counter, dataset_paths.upmc_example_folder + 'upmc_example_inventory.json')
 
     # # compare dataset intersections
     # print("Intersection on MIMIC test: ")
@@ -327,8 +341,8 @@ if __name__ == '__main__':
     # compare_dataset_summary(mimic_train_counter, msh_counter)
     # print("Intersection on umn: ")
     # compare_dataset_summary(mimic_train_counter, umn_counter)
-    print("Intersection on upmc example: ")
-    compare_dataset_summary(mimic_train_counter, upmc_example_counter)
+    # print("Intersection on upmc example: ")
+    # compare_dataset_summary(mimic_train_counter, upmc_example_counter)
     #
     # # compare mapping instances
     # print("Compare instances on MIMIC test:")
@@ -343,9 +357,9 @@ if __name__ == '__main__':
     # print("Compare instances on UMN:")
     # print(compare_dataset_instances(mimic_train_counter, umn_counter))
     #
-    print("Compare instances on UPMC example:")
-    print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
-
-    upmc_overlap = overlap_analysis(mimic_train_counter, upmc_example_counter)
-    json_writer(upmc_overlap, dataset_paths.upmc_example_folder+"/upmc_overlap.json")
-    print()
+    # print("Compare instances on UPMC example:")
+    # print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
+    #
+    # upmc_overlap = overlap_analysis(mimic_train_counter, upmc_example_counter)
+    # json_writer(upmc_overlap, dataset_paths.upmc_example_folder+"/upmc_overlap.json")
+    # print()
