@@ -18,13 +18,18 @@ class DataSetPaths:
     def __init__(self, environment):
 
         # DataSet Corpus files
-        self.mimic_train_txt = "/exp_data/wsd_data/mimic/train"
-        self.mimic_eval_txt = "/exp_data/wsd_data/mimic/eval"
-        # self.mimic_train_txt = get_path('../wsd_data/mimic/train', env=environment)
-        # self.mimic_eval_txt = get_path('../wsd_data/mimic/eval', env=environment)
-        # # mimic v1 (deprecated)
-        # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
-        # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
+        if environment == 'luoz3_x1':
+            mimic_base_folder = "/home/mengr/Project/wsd/wsd_data/mimic/data"
+            self.mimic_train_txt = mimic_base_folder+"/train"
+            self.mimic_eval_txt = mimic_base_folder+"/eval"
+        else:
+            self.mimic_train_txt = "/exp_data/wsd_data/mimic/train"
+            self.mimic_eval_txt = "/exp_data/wsd_data/mimic/eval"
+            # self.mimic_train_txt = get_path('../wsd_data/mimic/train', env=environment)
+            # self.mimic_eval_txt = get_path('../wsd_data/mimic/eval', env=environment)
+            # # mimic v1 (deprecated)
+            # mimic_train_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/train'
+            # mimic_eval_txt = '/home/zhaos5/projs/wsd/wsd_data/mimic/eval'
 
         self.share_txt = get_path('../wsd_data/share/processed/share_all_processed.txt', env=environment)
         self.msh_txt = get_path('../wsd_data/msh/msh_processed/msh_processed.txt', env=environment)

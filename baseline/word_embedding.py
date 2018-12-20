@@ -142,7 +142,7 @@ def generate_test_files(txt_path, test_processed_path):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths('luoz3')
+    dataset_paths = DataSetPaths('luoz3_x1')
 
     generate_train_files(dataset_paths.mimic_train_txt, dataset_paths.mimic_train_folder)
 
