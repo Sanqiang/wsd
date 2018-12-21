@@ -2,12 +2,14 @@
 Train supervised WSD model by fastText.
 """
 import os
-from tqdm import tqdm
 import random
-from fastText import train_supervised, load_model
+import errno
+from tqdm import tqdm
+from fastText import train_supervised, load_model, train_unsupervised
 from baseline.word_embedding import AbbrIndex
 from baseline.generate_content import AbbrCorpus, build_index_of_abbrs, Doc
 from baseline.dataset_helper import DataSetPaths
+from baseline.dataset_helper import InstancePred, evaluation, AbbrInstanceCollector
 from preprocess.file_helper import txt_reader, txt_writer, pickle_writer, pickle_reader
 
 
@@ -38,7 +40,6 @@ def generate_train_data(train_processed_path, window_size=5):
     abbr_idx_mapper = build_index_of_abbrs(abbr_index)
     pickle_writer(abbr_idx_mapper, data_processed_path + '/abbr_idx_mapper.pkl')
 
-    # Save all content vectors to pickle files
     content_dir = data_processed_path + '/dataset/'
     os.makedirs(content_dir, exist_ok=True)
 
@@ -61,7 +62,6 @@ def generate_test_data(test_processed_path, window_size=5):
     abbr_idx_mapper = build_index_of_abbrs(abbr_index)
     pickle_writer(abbr_idx_mapper, data_processed_path + '/abbr_idx_mapper.pkl')
 
-    # Save all content vectors to pickle files
     content_dir = data_processed_path + '/dataset/'
     os.makedirs(content_dir, exist_ok=True)
 
@@ -88,75 +88,199 @@ def train_fasttext_classifier(train_processed_path, abbr=None):
 
     model = train_supervised(
         input=input_file,
-        epoch=100,
+        epoch=50,
         lr=0.1,
-        lrUpdateRate=500,
+        lrUpdateRate=100,
         dim=100,
         ws=5,
+        wordNgrams=2,
         loss='hs',
-        thread=60
+        thread=60,
+        # pretrainedVectors=train_processed_path+'/fasttext.vec'
     )
     model.save_model(model_file)
     return model
 
 
-def eval_fasttext_classifier(train_processed_path, test_processed_path, abbr=None):
-    if abbr is None:
-        # evaluate on whole dataset
-        eval_file = test_processed_path+'/fasttext/dataset/all.txt'
-        model_file = train_processed_path+'/fasttext/model/all.bin'
-    else:
-        # Load abbr index
-        train_abbr_idx_mapper = pickle_reader(train_processed_path+'/fasttext/abbr_idx_mapper.pkl')
-        test_abbr_idx_mapper = pickle_reader(test_processed_path + '/fasttext/abbr_idx_mapper.pkl')
+def predict_fasttext_classifier(train_processed_path, test_processed_path):
+    # Load abbr index
+    train_abbr_idx_mapper = pickle_reader(train_processed_path + '/fasttext/abbr_idx_mapper.pkl')
+    train_abbr2idx = train_abbr_idx_mapper['abbr2idx']
+    test_abbr_idx_mapper = pickle_reader(test_processed_path + '/fasttext/abbr_idx_mapper.pkl')
+    test_abbr_index = AbbrIndex(test_processed_path + '/abbr_index_data.pkl')
 
-        train_abbr_idx = train_abbr_idx_mapper['abbr2idx'][abbr]
-        test_abbr_idx = test_abbr_idx_mapper['abbr2idx'][abbr]
-
-        eval_file = test_processed_path + '/fasttext/dataset/%d.txt' % test_abbr_idx
-        model_file = train_processed_path + '/fasttext/model/%d.bin' % train_abbr_idx
-
+    # Load model
+    model_file = train_processed_path + '/fasttext/model/all.bin'
     model = load_model(model_file)
-    print(model.test(eval_file))
+    label_set = set(map(lambda x: x.lstrip("__label__"), model.get_labels()))
+
+    instance_collection = []
+    # generate testing data
+    for abbr, test_abbr_idx in tqdm(test_abbr_idx_mapper['abbr2idx'].items()):
+        # if abbr not in train_abbr2idx:
+        #     for doc_id, pos_list in test_abbr_index[abbr].items():
+        #         for global_instance_idx, pos, label in pos_list:
+        #             instance_collection.append(InstancePred(index=global_instance_idx, abbr=abbr, sense_pred=None))
+        # else:
+        eval_abbr_instance_list = txt_reader(test_processed_path + '/fasttext/dataset/%d.txt' % test_abbr_idx)
+        abbr_instance_idx = 0
+        for doc_id, pos_list in test_abbr_index[abbr].items():
+            for global_instance_idx, pos, label in pos_list:
+                if label not in label_set:
+                    instance_collection.append(InstancePred(index=global_instance_idx, abbr=abbr, sense_pred=None))
+                else:
+                    # get instance
+                    tokens = eval_abbr_instance_list[abbr_instance_idx].split()
+                    label_in_txt = tokens[0].lstrip("__label__")
+                    assert label == label_in_txt
+                    context = " ".join(tokens[1:])
+                    instance_collection.append(InstancePred(
+                        index=global_instance_idx, abbr=abbr,
+                        sense_pred=model.predict(context)[0][0].lstrip("__label__")))
+                abbr_instance_idx += 1
+    # sort collection list based on global instance idx
+    instance_collection = sorted(instance_collection, key=lambda x: x.index)
+    return instance_collection
 
 
-def generate_whole_dataset(processed_path):
+def generate_whole_dataset(processed_path, shuffle=False):
     abbr_idx_mapper = pickle_reader(processed_path + '/fasttext/abbr_idx_mapper.pkl')
     with open(processed_path+'/fasttext/dataset/all.txt', 'w') as f:
         total_dataset = []
         for abbr, abbr_idx in tqdm(abbr_idx_mapper['abbr2idx'].items()):
             total_dataset.extend(txt_reader(processed_path+'/fasttext/dataset/%d.txt' % abbr_idx))
-        random.shuffle(total_dataset)
+        if shuffle:
+            random.shuffle(total_dataset)
         f.write("\n".join(total_dataset))
 
 
-def train_svm(train_processed_path):
-    # Load abbr index
-    abbr_idx_mapper = pickle_reader(train_processed_path+'/abbr_idx_mapper.pkl')
-    abbr_cui2idx_inventory = {}
-    os.makedirs(train_processed_path+'/svm_models/', exist_ok=True)
-    # generate training data & train model
-    for abbr, abbr_idx in tqdm(abbr_idx_mapper['abbr2idx'].items()):
-        content_vector = pickle_reader(train_processed_path + '/content_vectors/%d_vector.pkl' % abbr_idx)
-        label2idx = {}
-        label_idx = 0
-        x = []
-        y = []
-        for global_instance_idx, doc_id, pos, content_pos, content_vec, content, label in content_vector:
-            if label not in label2idx:
-                label2idx[label] = label_idx
-                label_idx += 1
-            x.append(content_vec)
-            y.append(label2idx[label])
+def train_skipgram(processed_path):
+    print("Train fastText...")
+    model = train_unsupervised(
+        input=processed_path+"/train_no_mark.txt",
+        model='skipgram',
+        dim=100,
+        minCount=1,
+        ws=10,
+        lrUpdateRate=1000,
+        epoch=50,
+        thread=60
+    )
+    model.save_model(processed_path+'/fasttext.bin')
 
-        abbr_cui2idx_inventory[abbr] = label2idx
+
+def comvert_bin_to_vec(bin_file, vec_file):
+    f = load_model(bin_file)
+    words = f.get_words()
+    with open(vec_file, 'w') as file:
+        file.write(str(len(words)) + " " + str(f.get_dimension())+'\n')
+        for w in tqdm(words):
+            v = f.get_word_vector(w)
+            vstr = ""
+            for vi in v:
+                vstr += " " + str(vi)
+            try:
+                file.write(w + vstr+'\n')
+            except IOError as e:
+                if e.errno == errno.EPIPE:
+                    pass
+
+
+def train_fasttext_classifier_multi_model(train_processed_path, use_pretrain=False):
+    train_path = train_processed_path + '/fasttext'
+    os.makedirs(train_path+'/model', exist_ok=True)
+    # Load abbr index
+    abbr_idx_mapper = pickle_reader(train_path+'/abbr_idx_mapper.pkl')
+    abbr_index = AbbrIndex(train_processed_path + '/abbr_index_data.pkl')
+    abbr_label_set = {}
+    # Load training data & train model
+    for abbr, abbr_idx in tqdm(abbr_idx_mapper['abbr2idx'].items()):
+        input_file = train_path + '/dataset/%d.txt' % abbr_idx
+        model_file = train_path + '/model/%d.bin' % abbr_idx
+        # load label list
+        label_set = set()
+        for doc_id, pos_list in abbr_index[abbr].items():
+            for global_instance_idx, pos, label in pos_list:
+                label_set.add(label)
+        abbr_label_set[abbr] = label_set
         # no need to train if only have 1 CUI
-        if len(label2idx) > 1:
-            x_train, y_train = train_sample(x, y, 2000)
-            # train svm model
-            model = SVC(kernel='rbf', gamma=0.01, C=100).fit(x_train, y_train)
-            pickle_writer(model, train_processed_path + '/svm_models/%d_svm.pkl' % abbr_idx)
-    pickle_writer(abbr_cui2idx_inventory, train_processed_path+'/abbr_cui_idx_inventory.pkl')
+        if len(label_set) > 1:
+            if use_pretrain and abbr_index.num_instances(abbr) < 5000:
+                model = train_supervised(
+                    input=input_file,
+                    epoch=50,
+                    lr=0.1,
+                    lrUpdateRate=100,
+                    dim=100,
+                    ws=5,
+                    wordNgrams=2,
+                    loss='hs',
+                    thread=60,
+                    pretrainedVectors=train_processed_path + '/fasttext.vec'
+                )
+            else:
+                model = train_supervised(
+                    input=input_file,
+                    epoch=50,
+                    lr=0.1,
+                    lrUpdateRate=100,
+                    dim=100,
+                    ws=5,
+                    wordNgrams=2,
+                    loss='hs',
+                    thread=60,
+                )
+            model.save_model(model_file)
+    pickle_writer(abbr_label_set, train_path+'/abbr_label_set.pkl')
+
+
+def predict_fasttext_classifier_multi_model(train_processed_path, test_processed_path):
+    # Load abbr index
+    test_abbr_idx_mapper = pickle_reader(test_processed_path + '/fasttext/abbr_idx_mapper.pkl')
+    test_abbr_index = AbbrIndex(test_processed_path + '/abbr_index_data.pkl')
+    train_abbr_idx_mapper = pickle_reader(train_processed_path + '/fasttext/abbr_idx_mapper.pkl')
+    train_abbr2idx = train_abbr_idx_mapper['abbr2idx']
+    train_abbr_label_set = pickle_reader(train_processed_path + '/fasttext/abbr_label_set.pkl')
+
+    instance_collection = []
+    # generate testing data
+    for abbr, test_abbr_idx in tqdm(test_abbr_idx_mapper['abbr2idx'].items()):
+        if abbr not in train_abbr_label_set:
+            for doc_id, pos_list in test_abbr_index[abbr].items():
+                for global_instance_idx, pos, label in pos_list:
+                    instance_collection.append(InstancePred(index=global_instance_idx, abbr=abbr, sense_pred=None))
+        else:
+            train_label_set = train_abbr_label_set[abbr]
+            if len(train_label_set) == 1:
+                for doc_id, pos_list in test_abbr_index[abbr].items():
+                    for global_instance_idx, pos, label in pos_list:
+                        instance_collection.append(InstancePred(index=global_instance_idx, abbr=abbr, sense_pred=label))
+            else:
+                # Load model
+                model_file = train_processed_path + '/fasttext/model/%d.bin' % train_abbr2idx[abbr]
+                model = load_model(model_file)
+                label_set = set(map(lambda x: x.lstrip("__label__"), model.get_labels()))
+
+                eval_abbr_instance_list = txt_reader(test_processed_path + '/fasttext/dataset/%d.txt' % test_abbr_idx)
+                abbr_instance_idx = 0
+                for doc_id, pos_list in test_abbr_index[abbr].items():
+                    for global_instance_idx, pos, label in pos_list:
+                        # if true label not in train collection
+                        if label not in label_set:
+                            instance_collection.append(InstancePred(index=global_instance_idx, abbr=abbr, sense_pred=None))
+                        else:
+                            # get instance
+                            tokens = eval_abbr_instance_list[abbr_instance_idx].split()
+                            label_in_txt = tokens[0].lstrip("__label__")
+                            assert label == label_in_txt
+                            context = " ".join(tokens[1:])
+                            instance_collection.append(InstancePred(
+                                index=global_instance_idx, abbr=abbr,
+                                sense_pred=model.predict(context)[0][0].lstrip("__label__")))
+                        abbr_instance_idx += 1
+    # sort collection list based on global instance idx
+    instance_collection = sorted(instance_collection, key=lambda x: x.index)
+    return instance_collection
 
 
 if __name__ == '__main__':
@@ -167,11 +291,78 @@ if __name__ == '__main__':
     # generate_test_data(dataset_paths.mimic_test_folder)
     # generate_test_data(dataset_paths.share_test_folder)
     # generate_test_data(dataset_paths.upmc_example_folder)
+    # generate_test_data(dataset_paths.msh_test_folder)
 
-    # generate_whole_dataset(dataset_paths.mimic_train_folder)
+    # generate_whole_dataset(dataset_paths.mimic_train_folder, shuffle=True)
     # generate_whole_dataset(dataset_paths.mimic_test_folder)
+    # generate_whole_dataset(dataset_paths.share_test_folder)
+    # generate_whole_dataset(dataset_paths.msh_test_folder)
+    # generate_whole_dataset(dataset_paths.upmc_example_folder)
+
+    # train_skipgram(dataset_paths.mimic_train_folder)
+    # comvert_bin_to_vec(
+    #     dataset_paths.mimic_train_folder+'/fasttext.bin',
+    #     dataset_paths.mimic_train_folder+'/fasttext.vec'
+    # )
 
     abbr = 'ct'
-    train_fasttext_classifier(dataset_paths.mimic_train_folder)
 
-    eval_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.mimic_test_folder)
+    # #####################################
+    # # train & test (single model)
+    # #####################################
+    #
+    # train_fasttext_classifier(dataset_paths.mimic_train_folder)
+    #
+    # print("fastText on MIMIC Test: ")
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    # mimic_test_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.mimic_test_folder)
+    # print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+    #
+    # print("fastText on ShARe/CLEF: ")
+    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    # share_collection_true = share_collector.generate_instance_collection()
+    # share_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.share_test_folder)
+    # print(evaluation(share_collection_true, share_collection_pred))
+    #
+    # print("fastText on MSH: ")
+    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    # msh_collection_true = msh_collector.generate_instance_collection()
+    # msh_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.msh_test_folder)
+    # print(evaluation(msh_collection_true, msh_collection_pred))
+    #
+    # print("fastText on UPMC example: ")
+    # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    # upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
+    # upmc_example_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.upmc_example_folder)
+    # print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
+
+    #####################################
+    # train & test (multiple model)
+    #####################################
+
+    train_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, True)
+
+    print("fastText on MIMIC Test: ")
+    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    mimic_test_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.mimic_test_folder)
+    print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+
+    print("fastText on ShARe/CLEF: ")
+    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    share_collection_true = share_collector.generate_instance_collection()
+    share_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.share_test_folder)
+    print(evaluation(share_collection_true, share_collection_pred))
+
+    print("fastText on MSH: ")
+    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    msh_collection_true = msh_collector.generate_instance_collection()
+    msh_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.msh_test_folder)
+    print(evaluation(msh_collection_true, msh_collection_pred))
+
+    print("fastText on UPMC example: ")
+    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
+    upmc_example_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.upmc_example_folder)
+    print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))

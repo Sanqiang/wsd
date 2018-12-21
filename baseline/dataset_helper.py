@@ -301,7 +301,7 @@ def evaluation(instance_collection_true: list, instance_collection_pred: list):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths('luoz3')
+    dataset_paths = DataSetPaths('luoz3_x1')
     train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
 
     # # build train collectors
@@ -310,7 +310,7 @@ if __name__ == '__main__':
 
     # read train counter from file
     mimic_train_counter = pickle_reader(train_counter_path)
-    generate_sense_inventory_json_by_counter(mimic_train_counter, dataset_paths.mimic_train_folder+'mimic_train_inventory.json')
+    # generate_sense_inventory_json_by_counter(mimic_train_counter, dataset_paths.mimic_train_folder+'mimic_train_inventory.json')
 
     # # summary of training set
     # print("Summary of MIMIC train:")
@@ -330,12 +330,12 @@ if __name__ == '__main__':
     umn_counter = umn_collector.generate_counter()
     upmc_example_counter = upmc_example_collector.generate_counter()
 
-    # generate sense inventories
-    generate_sense_inventory_json_by_counter(mimic_test_counter, dataset_paths.mimic_test_folder + 'mimic_test_inventory.json')
-    generate_sense_inventory_json_by_counter(share_counter, dataset_paths.share_test_folder + 'share_inventory.json')
-    generate_sense_inventory_json_by_counter(msh_counter, dataset_paths.msh_test_folder + 'msh_inventory.json')
-    generate_sense_inventory_json_by_counter(umn_counter, dataset_paths.umn_test_folder + 'umn_inventory.json')
-    generate_sense_inventory_json_by_counter(upmc_example_counter, dataset_paths.upmc_example_folder + 'upmc_example_inventory.json')
+    # # generate sense inventories
+    # generate_sense_inventory_json_by_counter(mimic_test_counter, dataset_paths.mimic_test_folder + 'mimic_test_inventory.json')
+    # generate_sense_inventory_json_by_counter(share_counter, dataset_paths.share_test_folder + 'share_inventory.json')
+    # generate_sense_inventory_json_by_counter(msh_counter, dataset_paths.msh_test_folder + 'msh_inventory.json')
+    # generate_sense_inventory_json_by_counter(umn_counter, dataset_paths.umn_test_folder + 'umn_inventory.json')
+    # generate_sense_inventory_json_by_counter(upmc_example_counter, dataset_paths.upmc_example_folder + 'upmc_example_inventory.json')
 
     # # compare dataset intersections
     # print("Intersection on MIMIC test: ")
@@ -348,23 +348,23 @@ if __name__ == '__main__':
     # compare_dataset_summary(mimic_train_counter, umn_counter)
     # print("Intersection on upmc example: ")
     # compare_dataset_summary(mimic_train_counter, upmc_example_counter)
-    #
-    # # compare mapping instances
-    # print("Compare instances on MIMIC test:")
-    # print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
-    #
-    # print("Compare instances on ShARe/CLEF:")
-    # print(compare_dataset_instances(mimic_train_counter, share_counter))
-    #
-    # print("Compare instances on MSH:")
-    # print(compare_dataset_instances(mimic_train_counter, msh_counter))
-    #
-    # print("Compare instances on UMN:")
-    # print(compare_dataset_instances(mimic_train_counter, umn_counter))
-    #
-    # print("Compare instances on UPMC example:")
-    # print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
-    #
+
+    # compare mapping instances
+    print("Compare instances on MIMIC test:")
+    print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
+
+    print("Compare instances on ShARe/CLEF:")
+    print(compare_dataset_instances(mimic_train_counter, share_counter))
+
+    print("Compare instances on MSH:")
+    print(compare_dataset_instances(mimic_train_counter, msh_counter))
+
+    print("Compare instances on UMN:")
+    print(compare_dataset_instances(mimic_train_counter, umn_counter))
+
+    print("Compare instances on UPMC example:")
+    print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
+
     # upmc_overlap = overlap_analysis(mimic_train_counter, upmc_example_counter)
     # json_writer(upmc_overlap, dataset_paths.upmc_example_folder+"/upmc_overlap.json")
     # print()
