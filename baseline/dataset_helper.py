@@ -317,18 +317,18 @@ if __name__ == '__main__':
     # dataset_summary(mimic_train_counter)
 
     # build test collectors
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
     share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
-    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
 
     # generate test counters
-    mimic_test_counter = mimic_test_collector.generate_counter()
+    # mimic_test_counter = mimic_test_collector.generate_counter()
     share_counter = share_collector.generate_counter()
-    msh_counter = msh_collector.generate_counter()
-    umn_counter = umn_collector.generate_counter()
-    upmc_example_counter = upmc_example_collector.generate_counter()
+    # msh_counter = msh_collector.generate_counter()
+    # umn_counter = umn_collector.generate_counter()
+    # upmc_example_counter = upmc_example_collector.generate_counter()
 
     # # generate sense inventories
     # generate_sense_inventory_json_by_counter(mimic_test_counter, dataset_paths.mimic_test_folder + 'mimic_test_inventory.json')
@@ -349,9 +349,9 @@ if __name__ == '__main__':
     # print("Intersection on upmc example: ")
     # compare_dataset_summary(mimic_train_counter, upmc_example_counter)
 
-    # compare mapping instances
-    print("Compare instances on MIMIC test:")
-    print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
+    # # compare mapping instances
+    # print("Compare instances on MIMIC test:")
+    # print(compare_dataset_instances(mimic_train_counter, mimic_test_counter))
 
     print("Compare instances on ShARe/CLEF:")
     print(compare_dataset_instances(mimic_train_counter, share_counter))
