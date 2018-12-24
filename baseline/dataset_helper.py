@@ -261,29 +261,63 @@ def save_instance_collection_to_json(instance_collection: list, json_path: str):
             file.write(json.dumps(instance._asdict())+'\n')
 
 
-def evaluation(instance_collection_true: list, instance_collection_pred: list):
+def evaluation(instance_collection_true: list, instance_collection_pred: list, num_limited_samples=1000):
     """
     Evaluate accuracy based on instance collections.
 
     :param instance_collection_true:
     :param instance_collection_pred:
+    :param num_limited_samples: abbr with instances lower than it will count as abbr_with_limited_samples
     :return:
     """
     assert len(instance_collection_true) == len(instance_collection_pred)
+    # Load train abbr index
+    from baseline.word_embedding import AbbrIndex
+    dataset_paths = DataSetPaths('luoz3_x1')
+    train_abbr_index = AbbrIndex(dataset_paths.mimic_train_folder + '/abbr_index_data.pkl')
+
     count_correct, count_total, count_capable_total = 0.0, 0.0, 0.0
+    count_by_abbr = {}
+    count_by_abbr_only_limited_samples = {}
     for instance_true, instance_pred in zip(instance_collection_true, instance_collection_pred):
         assert instance_true.index == instance_pred.index
+        abbr = instance_true.abbr
+        if abbr not in count_by_abbr:
+            count_by_abbr[abbr] = [0, 0]
         if instance_true.sense == instance_pred.sense_pred:
             count_correct += 1.0
+            count_by_abbr[abbr][0] += 1.0
         count_total += 1.0
+        count_by_abbr[abbr][1] += 1.0
         # count the number of datapoints that model is able to predict
         if instance_pred.sense_pred:
             count_capable_total += 1.0
 
+        if abbr not in train_abbr_index or train_abbr_index.num_instances(abbr) < num_limited_samples:
+            if abbr not in count_by_abbr_only_limited_samples:
+                count_by_abbr_only_limited_samples[abbr] = [0, 0]
+            if instance_true.sense == instance_pred.sense_pred:
+                count_by_abbr_only_limited_samples[abbr][0] += 1.0
+            count_by_abbr_only_limited_samples[abbr][1] += 1.0
+
     if count_total > 0:
         acc = count_correct / count_total
+
+        acc_by_abbr = []
+        for abbr, (count_correct_by_abbr, count_total_by_abbr) in count_by_abbr.items():
+            acc_by_abbr.append(count_correct_by_abbr/count_total_by_abbr)
+        acc_by_abbr = sum(acc_by_abbr)/len(acc_by_abbr)
+
+        acc_by_abbr_only_limited_samples = []
+        for abbr, (count_correct_by_abbr, count_total_by_abbr) in count_by_abbr_only_limited_samples.items():
+            acc_by_abbr_only_limited_samples.append(count_correct_by_abbr/count_total_by_abbr)
+        num_abbr_only_limited_samples = len(acc_by_abbr_only_limited_samples)
+        acc_by_abbr_only_limited_samples = sum(acc_by_abbr_only_limited_samples)/num_abbr_only_limited_samples
     else:
         acc = 0.0
+        acc_by_abbr = 0.0
+        acc_by_abbr_only_limited_samples = 0.0
+        num_abbr_only_limited_samples = 0
 
     if count_capable_total > 0:
         acc_capable = count_correct / count_capable_total
@@ -291,11 +325,14 @@ def evaluation(instance_collection_true: list, instance_collection_pred: list):
         acc_capable = 0.0
 
     score_dict = {
-                  'accuracy': acc,
-                  'accuracy_capable': acc_capable,
-                  'num_correct': count_correct,
-                  'num_total': count_total,
-                  'num_capable_total': count_capable_total,
+        'accuracy': acc,
+        'accuracy_capable': acc_capable,
+        'accuracy_by_abbr': acc_by_abbr,
+        'accuracy_by_abbr_only_limited_samples': acc_by_abbr_only_limited_samples,
+        'num_correct': count_correct,
+        'num_total': count_total,
+        'num_capable_total': count_capable_total,
+        'num_abbr_only_limited_samples': num_abbr_only_limited_samples
     }
     return score_dict
 
@@ -356,14 +393,14 @@ if __name__ == '__main__':
     print("Compare instances on ShARe/CLEF:")
     print(compare_dataset_instances(mimic_train_counter, share_counter))
 
-    print("Compare instances on MSH:")
-    print(compare_dataset_instances(mimic_train_counter, msh_counter))
-
-    print("Compare instances on UMN:")
-    print(compare_dataset_instances(mimic_train_counter, umn_counter))
-
-    print("Compare instances on UPMC example:")
-    print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
+    # print("Compare instances on MSH:")
+    # print(compare_dataset_instances(mimic_train_counter, msh_counter))
+    #
+    # print("Compare instances on UMN:")
+    # print(compare_dataset_instances(mimic_train_counter, umn_counter))
+    #
+    # print("Compare instances on UPMC example:")
+    # print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
 
     # upmc_overlap = overlap_analysis(mimic_train_counter, upmc_example_counter)
     # json_writer(upmc_overlap, dataset_paths.upmc_example_folder+"/upmc_overlap.json")
