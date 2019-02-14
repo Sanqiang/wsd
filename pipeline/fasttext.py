@@ -5,6 +5,7 @@ import os
 import re
 import tqdm
 import json
+import pickle
 import multiprocessing as mp
 from collections import defaultdict, OrderedDict
 from fastText import load_model
@@ -58,53 +59,58 @@ def white_space_remover_upmc(txt):
     return txt
 
 
-def abbr_detector(txt):
+class AbbrDetector:
     """Detect Abbrs
     :return: content and abbrs after processed
     """
-    # Patterns for Abbr detection
 
-    ABBR_PATTERN = re.compile(r"[A-Z\-_0-9#]+")
-    abbr_patterns = [
-        ABBR_PATTERN
-    ]
-    black_list = {
-        "-",
-        "Dr.",
-        "Mr.",
-        "Ms.",
-        "vs.",
-        "a.m.",
-        "p.m.",
-    }
-    black_pattern_list = [
-        re.compile(r"[0-9a-z]+"),
-        re.compile(r"[A-Z][a-z]*"),
-        # DeID strings
-        re.compile(r"[A-Z-]+-DEID"),
-        # non-words
-        re.compile(r"[^a-zA-Z]+"),
-        # start with "-"
-        re.compile(r"-.+"),
-        # times
-        re.compile(r"\d{2}:\d{2}(AM|PM)"),
-        # ages
-        re.compile(r"\d+-year-old"),
-        # 's
-        re.compile(r"'[sS]"),
-        # mmHg
-        re.compile(r"(\d+\))?mmHg"),
-        # mEq
-        re.compile(r"(w/)?\d*(mEq|MEQ|meq|MeQs)"),
-    ]
+    def __init__(self, abbr_inventory_path):
+        self.abbr_inventory = pickle.load(open(abbr_inventory_path, "rb"))
+        # Patterns for Abbr detection
+        self.abbr_patterns = [
+            re.compile(r"[A-Z\-_0-9#]+")
+        ]
+        self.black_list = {
+            "-",
+            "Dr.",
+            "Mr.",
+            "Ms.",
+            "vs.",
+            "a.m.",
+            "p.m.",
+        }
+        self.black_pattern_list = [
+            re.compile(r"[0-9a-z]+"),
+            re.compile(r"[A-Z][a-z]*"),
+            # DeID strings
+            re.compile(r"[A-Z-]+-DEID"),
+            # non-words
+            re.compile(r"[^a-zA-Z]+"),
+            # start with "-"
+            re.compile(r"-.+"),
+            # times
+            re.compile(r"\d{2}:\d{2}(AM|PM)"),
+            # ages
+            re.compile(r"\d+-year-old"),
+            # 's
+            re.compile(r"'[sS]"),
+            # mmHg
+            re.compile(r"(\d+\))?mmHg"),
+            # mEq
+            re.compile(r"(w/)?\d*(mEq|MEQ|meq|MeQs)"),
+        ]
 
-    content = []
-    for word in txt.split():
-        if word not in black_list and not some(black_pattern_list, lambda p: p.fullmatch(word)) and (word or some(abbr_patterns, lambda p: p.fullmatch(word))):
-            content.append("abbr|{0}|".format(word))
-        else:
-            content.append(word)
-    return " ".join(content)
+    def __call__(self, txt):
+        content = []
+        for word in txt.split():
+            if word not in self.black_list \
+                    and not some(self.black_pattern_list, lambda p: p.fullmatch(word)) \
+                    and (word or some(self.abbr_patterns, lambda p: p.fullmatch(word)))\
+                    and word in self.abbr_inventory:
+                content.append("abbr|{0}|".format(word))
+            else:
+                content.append(word)
+        return " ".join(content)
 
 
 def global_instance_idx_mapper(abbr_index):
@@ -173,7 +179,7 @@ def save_result_to_json(wsd_result, documents_tokenized, file_name=None, indent=
 
 class AbbrDisambiguation:
 
-    def __init__(self, train_processed_path, use_pretrain=False, use_softmax=False):
+    def __init__(self, train_processed_path, abbr_inventory_path, use_pretrain=False, use_softmax=False):
         """
         Initialize environment & model.
         """
@@ -182,7 +188,7 @@ class AbbrDisambiguation:
             white_space_remover_upmc,
             sub_deid_patterns_upmc])
         self.tokenizer = CoreNLPTokenizer()
-        self.post_processor = TextProcessor([abbr_detector])
+        self.post_processor = TextProcessor([AbbrDetector(abbr_inventory_path)])
         self.filter_processor = TextProcessor([
             TextTokenFilter(),
             repeat_non_word_remover])
@@ -277,6 +283,7 @@ if __name__ == '__main__':
     dataset_paths = DataSetPaths('luoz3_x1')
     data_path = "/home/luoz3/wsd_data"
     dataset_processed_path = data_path + "/upmc/example/processed"
+    abbr_inventory_path = data_path + "/abbr_inventory.pkl"
     example_note_path = "/data/batch4/500K_By_Sources_2013_output/PEGREMO_21/doc.9071.txt"
 
     # load raw txt note
@@ -285,6 +292,7 @@ if __name__ == '__main__':
 
     wsd = AbbrDisambiguation(
         train_processed_path=dataset_paths.mimic_train_folder,
+        abbr_inventory_path=abbr_inventory_path,
         use_pretrain=True,
         use_softmax=True)
 
