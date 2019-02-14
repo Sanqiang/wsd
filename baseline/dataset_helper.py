@@ -125,7 +125,7 @@ class AbbrInstanceCollector:
         abbr_index = AbbrIndex()
         txt_post_processed = []
         global_instance_idx = 0
-        for doc_idx, doc in enumerate(tqdm.tqdm(self.corpus)):
+        for doc_idx, doc in enumerate(self.corpus):
             doc_abbr = defaultdict(list)
             doc_processed = []
             tokens = doc.rstrip('\n').split(" ")
