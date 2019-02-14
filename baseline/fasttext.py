@@ -157,6 +157,7 @@ def train_fasttext_classifier(train_processed_path, abbr=None, use_pretrain=Fals
         'input': input_file,
         'epoch': 50,
         'lr': 0.1,
+        'lrUpdateRate': 100,
         'dim': 100,
         'ws': 5,
         'wordNgrams': 2,
@@ -254,6 +255,7 @@ def train_fasttext_classifier_multi_model(train_processed_path, use_pretrain=Fal
                 'input': input_file,
                 'epoch': 50,
                 'lr': 0.1,
+                'lrUpdateRate': 100,
                 'dim': 100,
                 'ws': 5,
                 'wordNgrams': 2,
@@ -325,6 +327,33 @@ def predict_fasttext_classifier_multi_model(train_processed_path, test_processed
     return instance_collection
 
 
+def train_evaluate_fasttext_on_datasets(dataset_paths, only_test=True, use_single_model=True, use_pretrain=False, use_softmax=False):
+    # train
+    train_dataset = ("MIMIC Train", dataset_paths.mimic_train_folder)
+    if not only_test:
+        print("Train fastText on {}:".format(train_dataset[0]))
+        if use_single_model:
+            train_fasttext_classifier(train_dataset[1], use_pretrain=use_pretrain, use_softmax=use_softmax)
+        else:
+            train_fasttext_classifier_multi_model(train_dataset[1], use_pretrain=use_pretrain, use_softmax=use_softmax)
+    # test
+    datasets = [
+        ("MIMIC Test", dataset_paths.mimic_eval_txt, dataset_paths.mimic_test_folder),
+        ("ShARe/CLEF", dataset_paths.share_txt, dataset_paths.share_test_folder),
+        ("MSH", dataset_paths.msh_txt, dataset_paths.msh_test_folder),
+        ("UPMC example", dataset_paths.upmc_example_txt, dataset_paths.upmc_example_folder),
+    ]
+    for name, txt_path, test_folder in datasets:
+        print("Test fastText on {}: ".format(name))
+        test_collector = AbbrInstanceCollector(txt_path)
+        test_collection_true = test_collector.generate_instance_collection()
+        if use_single_model:
+            test_collection_pred = predict_fasttext_classifier(train_dataset[1], test_folder, use_pretrain=use_pretrain, use_softmax=use_softmax)
+        else:
+            test_collection_pred = predict_fasttext_classifier_multi_model(train_dataset[1], test_folder, use_pretrain=use_pretrain)
+        print(evaluation(test_collection_true, test_collection_pred))
+
+
 if __name__ == '__main__':
     dataset_paths = DataSetPaths('luoz3_x1')
 
@@ -355,62 +384,26 @@ if __name__ == '__main__':
     #     dataset_paths.mimic_train_folder+'/fasttext.vec'
     # )
 
-    #####################################
-    # train & test (single model)
-    #####################################
-
-    # train_fasttext_classifier(dataset_paths.mimic_train_folder, use_pretrain=False, use_softmax=True)
-
-    print("fastText on MIMIC Test: ")
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
-    mimic_test_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.mimic_test_folder, use_softmax=True)
-    print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
-
-    print("fastText on ShARe/CLEF: ")
-    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    share_collection_true = share_collector.generate_instance_collection()
-    share_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.share_test_folder, use_softmax=True)
-    print(evaluation(share_collection_true, share_collection_pred))
-
-    print("fastText on MSH: ")
-    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    msh_collection_true = msh_collector.generate_instance_collection()
-    msh_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.msh_test_folder, use_softmax=True)
-    print(evaluation(msh_collection_true, msh_collection_pred))
-
-    print("fastText on UPMC example: ")
-    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
-    upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
-    upmc_example_collection_pred = predict_fasttext_classifier(dataset_paths.mimic_train_folder, dataset_paths.upmc_example_folder, use_softmax=True)
-    print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
-
     # #####################################
-    # # train & test (multiple model)
+    # # train & test (single model)
     # #####################################
     #
-    # train_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, True)
-    #
-    # print("fastText on MIMIC Test: ")
-    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
-    # mimic_test_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.mimic_test_folder, True)
-    # print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
-    #
-    # print("fastText on ShARe/CLEF: ")
-    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    # share_collection_true = share_collector.generate_instance_collection()
-    # share_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.share_test_folder, True)
-    # print(evaluation(share_collection_true, share_collection_pred))
-    #
-    # print("fastText on MSH: ")
-    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    # msh_collection_true = msh_collector.generate_instance_collection()
-    # msh_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.msh_test_folder, True)
-    # print(evaluation(msh_collection_true, msh_collection_pred))
-    #
-    # print("fastText on UPMC example: ")
-    # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
-    # upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
-    # upmc_example_collection_pred = predict_fasttext_classifier_multi_model(dataset_paths.mimic_train_folder, dataset_paths.upmc_example_folder, True)
-    # print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
+    # train_evaluate_fasttext_on_datasets(
+    #     dataset_paths,
+    #     only_test=False,
+    #     use_single_model=True,
+    #     use_pretrain=True,
+    #     use_softmax=True
+    # )
+
+    #####################################
+    # train & test (multiple model)
+    #####################################
+
+    train_evaluate_fasttext_on_datasets(
+        dataset_paths,
+        only_test=False,
+        use_single_model=False,
+        use_pretrain=True,
+        use_softmax=True
+    )
