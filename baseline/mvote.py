@@ -59,14 +59,19 @@ def evaluate_score_majority_vote(train_counter, test_path):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths('luoz3')
-    train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
+    dataset_paths = DataSetPaths('luoz3_x1')
+    # train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
 
     # # process train abbr info
     # mimic_train_collector = AbbrInstanceCollector(dataset_paths.mimic_train_txt)
     # mimic_train_counter = mimic_train_collector.generate_counter(train_counter_path)
 
-    mimic_train_counter = pickle_reader(train_counter_path)
+    # mimic_train_counter = pickle_reader(train_counter_path)
+
+    upmc_ab_train_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_train_txt)
+    upmc_ab_train_counter = upmc_ab_train_collector.generate_counter(dataset_paths.upmc_ab_train_folder+"/train_abbr_counter.pkl")
+
+    # upmc_ab_train_counter = pickle_reader(dataset_paths.upmc_ab_train_folder+"/train_abbr_counter.pkl")
 
     #####################################
     # testing (directly compute score, not using standard pipeline)
@@ -82,35 +87,41 @@ if __name__ == '__main__':
     # testing (using standard evaluation pipeline)
     #####################################
 
-    # load test sets
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
-    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    # # load test sets
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
 
-    print("Mvote on MIMIC test: ")
-    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
-    mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
-    print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+    # print("Mvote on MIMIC test: ")
+    # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    # mimic_test_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.mimic_eval_txt)
+    # print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+    #
+    # print("Mvote on ShARe/CLEF: ")
+    # share_collection_true = share_collector.generate_instance_collection()
+    # share_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.share_txt)
+    # print(evaluation(share_collection_true, share_collection_pred))
+    #
+    # print("Mvote on MSH: ")
+    # msh_collection_true = msh_collector.generate_instance_collection()
+    # msh_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
+    # print(evaluation(msh_collection_true, msh_collection_pred))
+    #
+    # print("Mvote on UMN: ")
+    # umn_collection_true = umn_collector.generate_instance_collection()
+    # umn_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.umn_txt)
+    # print(evaluation(umn_collection_true, umn_collection_pred))
+    #
+    # print("Mvote on UPMC example: ")
+    # upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
+    # upmc_example_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.upmc_example_txt)
+    # print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
+    # save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_mvote_pred.json")
 
-    print("Mvote on ShARe/CLEF: ")
-    share_collection_true = share_collector.generate_instance_collection()
-    share_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.share_txt)
-    print(evaluation(share_collection_true, share_collection_pred))
-
-    print("Mvote on MSH: ")
-    msh_collection_true = msh_collector.generate_instance_collection()
-    msh_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.msh_txt)
-    print(evaluation(msh_collection_true, msh_collection_pred))
-
-    print("Mvote on UMN: ")
-    umn_collection_true = umn_collector.generate_instance_collection()
-    umn_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.umn_txt)
-    print(evaluation(umn_collection_true, umn_collection_pred))
-
-    print("Mvote on UPMC example: ")
-    upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
-    upmc_example_collection_pred = predict_majority_vote(mimic_train_counter, dataset_paths.upmc_example_txt)
-    print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
-    save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_mvote_pred.json")
+    print("Mvote on UPMC AB test: ")
+    upmc_ab_test_collection_true = upmc_ab_test_collector.generate_instance_collection()
+    upmc_ab_test_collection_pred = predict_majority_vote(upmc_ab_train_counter, dataset_paths.upmc_ab_test_txt)
+    print(evaluation(upmc_ab_test_collection_true, upmc_ab_test_collection_pred))

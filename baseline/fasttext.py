@@ -97,7 +97,7 @@ def train_skipgram(processed_path):
         input=processed_path+"/train_no_mark.txt",
         model='skipgram',
         dim=100,
-        minCount=1,
+        minCount=5,
         ws=10,
         lrUpdateRate=1000,
         epoch=50,
@@ -329,7 +329,9 @@ def predict_fasttext_classifier_multi_model(train_processed_path, test_processed
 
 def train_evaluate_fasttext_on_datasets(dataset_paths, only_test=True, use_single_model=True, use_pretrain=False, use_softmax=False):
     # train
-    train_dataset = ("MIMIC Train", dataset_paths.mimic_train_folder)
+    # train_dataset = ("MIMIC Train", dataset_paths.mimic_train_folder)
+    train_dataset = ("UPMC AB Train", dataset_paths.upmc_ab_train_folder)
+
     if not only_test:
         print("Train fastText on {}:".format(train_dataset[0]))
         if use_single_model:
@@ -338,10 +340,11 @@ def train_evaluate_fasttext_on_datasets(dataset_paths, only_test=True, use_singl
             train_fasttext_classifier_multi_model(train_dataset[1], use_pretrain=use_pretrain, use_softmax=use_softmax)
     # test
     datasets = [
-        ("MIMIC Test", dataset_paths.mimic_eval_txt, dataset_paths.mimic_test_folder),
-        ("ShARe/CLEF", dataset_paths.share_txt, dataset_paths.share_test_folder),
-        ("MSH", dataset_paths.msh_txt, dataset_paths.msh_test_folder),
-        ("UPMC example", dataset_paths.upmc_example_txt, dataset_paths.upmc_example_folder),
+        # ("MIMIC Test", dataset_paths.mimic_eval_txt, dataset_paths.mimic_test_folder),
+        # ("ShARe/CLEF", dataset_paths.share_txt, dataset_paths.share_test_folder),
+        # ("MSH", dataset_paths.msh_txt, dataset_paths.msh_test_folder),
+        # ("UPMC example", dataset_paths.upmc_example_txt, dataset_paths.upmc_example_folder),
+        ("UPMC AB test", dataset_paths.upmc_ab_test_txt, dataset_paths.upmc_ab_test_folder),
     ]
     for name, txt_path, test_folder in datasets:
         print("Test fastText on {}: ".format(name))
@@ -362,17 +365,21 @@ if __name__ == '__main__':
     #####################################
 
     # generate_train_data(dataset_paths.mimic_train_folder)
-    #
+    # generate_train_data(dataset_paths.upmc_ab_train_folder)
+
     # generate_test_data(dataset_paths.mimic_test_folder)
     # generate_test_data(dataset_paths.share_test_folder)
     # generate_test_data(dataset_paths.upmc_example_folder)
     # generate_test_data(dataset_paths.msh_test_folder)
+    # generate_test_data(dataset_paths.upmc_ab_test_folder)
 
     # generate_whole_dataset(dataset_paths.mimic_train_folder, shuffle=True)
     # generate_whole_dataset(dataset_paths.mimic_test_folder)
     # generate_whole_dataset(dataset_paths.share_test_folder)
     # generate_whole_dataset(dataset_paths.msh_test_folder)
     # generate_whole_dataset(dataset_paths.upmc_example_folder)
+    # generate_whole_dataset(dataset_paths.upmc_ab_train_folder, shuffle=True)
+    # generate_whole_dataset(dataset_paths.upmc_ab_test_folder)
 
     #####################################
     # train word embedding
@@ -383,11 +390,16 @@ if __name__ == '__main__':
     #     dataset_paths.mimic_train_folder+'/fasttext.bin',
     #     dataset_paths.mimic_train_folder+'/fasttext.vec'
     # )
+    # train_skipgram(dataset_paths.upmc_all_no_mark_folder)
+    # comvert_bin_to_vec(
+    #     dataset_paths.upmc_all_no_mark_folder+'/fasttext.bin',
+    #     dataset_paths.upmc_ab_train_folder+'/fasttext.vec'
+    # )
 
     # #####################################
     # # train & test (single model)
     # #####################################
-    #
+
     # train_evaluate_fasttext_on_datasets(
     #     dataset_paths,
     #     only_test=False,
@@ -402,8 +414,8 @@ if __name__ == '__main__':
 
     train_evaluate_fasttext_on_datasets(
         dataset_paths,
-        only_test=False,
+        only_test=True,
         use_single_model=False,
-        use_pretrain=True,
+        use_pretrain=False,
         use_softmax=True
     )

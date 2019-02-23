@@ -224,7 +224,7 @@ def predict_svm(test_processed_path, train_processed_path):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths('luoz3')
+    dataset_paths = DataSetPaths('luoz3_x1')
 
     #####################################
     # train
@@ -233,6 +233,7 @@ if __name__ == '__main__':
     # svm_cross_validation(dataset_paths.mimic_train_folder, abbr_idx=40)
 
     # train_svm(dataset_paths.mimic_train_folder)
+    train_svm(dataset_paths.upmc_ab_train_folder)
 
     # #####################################
     # # testing (directly compute score, not using standard pipeline)
@@ -249,34 +250,40 @@ if __name__ == '__main__':
     #####################################
 
     # load test sets
-    mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
-    share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
-    msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
-    umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
-    upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
+    # share_collector = AbbrInstanceCollector(dataset_paths.share_txt)
+    # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
+    # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
+    # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
+    upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
 
-    print("SVM on MIMIC test: ")
-    mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
-    mimic_test_collection_pred = predict_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
-    print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+    # print("SVM on MIMIC test: ")
+    # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
+    # mimic_test_collection_pred = predict_svm(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
+    # print(evaluation(mimic_test_collection_true, mimic_test_collection_pred))
+    #
+    # print("SVM on ShARe/CLEF: ")
+    # share_collection_true = share_collector.generate_instance_collection()
+    # share_collection_pred = predict_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    # print(evaluation(share_collection_true, share_collection_pred))
+    #
+    # print("SVM on MSH: ")
+    # msh_collection_true = msh_collector.generate_instance_collection()
+    # msh_collection_pred = predict_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    # print(evaluation(msh_collection_true, msh_collection_pred))
+    #
+    # print("SVM on UMN: ")
+    # umn_collection_true = umn_collector.generate_instance_collection()
+    # umn_collection_pred = predict_svm(dataset_paths.umn_test_folder, dataset_paths.mimic_train_folder)
+    # print(evaluation(umn_collection_true, umn_collection_pred))
+    #
+    # print("SVM on UPMC example: ")
+    # upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
+    # upmc_example_collection_pred = predict_svm(dataset_paths.upmc_example_folder, dataset_paths.mimic_train_folder)
+    # print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
+    # save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_svm_pred.json")
 
-    print("SVM on ShARe/CLEF: ")
-    share_collection_true = share_collector.generate_instance_collection()
-    share_collection_pred = predict_svm(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    print(evaluation(share_collection_true, share_collection_pred))
-
-    print("SVM on MSH: ")
-    msh_collection_true = msh_collector.generate_instance_collection()
-    msh_collection_pred = predict_svm(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
-    print(evaluation(msh_collection_true, msh_collection_pred))
-
-    print("SVM on UMN: ")
-    umn_collection_true = umn_collector.generate_instance_collection()
-    umn_collection_pred = predict_svm(dataset_paths.umn_test_folder, dataset_paths.mimic_train_folder)
-    print(evaluation(umn_collection_true, umn_collection_pred))
-
-    print("SVM on UPMC example: ")
-    upmc_example_collection_true = upmc_example_collector.generate_instance_collection()
-    upmc_example_collection_pred = predict_svm(dataset_paths.upmc_example_folder, dataset_paths.mimic_train_folder)
-    print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
-    save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_svm_pred.json")
+    print("SVM on UPMC AB test: ")
+    upmc_ab_test_collection_true = upmc_ab_test_collector.generate_instance_collection()
+    upmc_ab_test_collection_pred = predict_svm(dataset_paths.upmc_ab_test_folder, dataset_paths.upmc_ab_train_folder)
+    print(evaluation(upmc_ab_test_collection_true, upmc_ab_test_collection_pred))

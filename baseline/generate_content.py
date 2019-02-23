@@ -195,12 +195,14 @@ def generate_test_content(test_processed_path, train_processed_path):
 
 
 if __name__ == '__main__':
-    dataset_paths = DataSetPaths('luoz3')
+    dataset_paths = DataSetPaths('luoz3_x1')
 
-    generate_train_content(dataset_paths.mimic_train_folder)
+    # generate_train_content(dataset_paths.mimic_train_folder)
+    generate_train_content(dataset_paths.upmc_ab_train_folder)
 
-    generate_test_content(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
-    generate_test_content(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
-    generate_test_content(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
-    generate_test_content(dataset_paths.umn_test_folder, dataset_paths.mimic_train_folder)
-    generate_test_content(dataset_paths.upmc_example_folder, dataset_paths.mimic_train_folder)
+    # generate_test_content(dataset_paths.mimic_test_folder, dataset_paths.mimic_train_folder)
+    # generate_test_content(dataset_paths.msh_test_folder, dataset_paths.mimic_train_folder)
+    # generate_test_content(dataset_paths.share_test_folder, dataset_paths.mimic_train_folder)
+    # generate_test_content(dataset_paths.umn_test_folder, dataset_paths.mimic_train_folder)
+    # generate_test_content(dataset_paths.upmc_example_folder, dataset_paths.mimic_train_folder)
+    generate_test_content(dataset_paths.upmc_ab_test_folder, dataset_paths.upmc_ab_train_folder)

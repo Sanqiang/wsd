@@ -1,13 +1,10 @@
 """
-Example processing pipeline for general DataSet:
--- First customize DataSet functions below
--- Change the order of annotator or other processors in main function if necessary
--- Make sure CoreNLP Java Server is open, by "screen -r nlp" in terminal
--- Process your DataSet
+Processing UPMC data.
 """
 import os
 import re
 import tqdm
+import random
 import operator
 import multiprocessing as mp
 from preprocess.text_helper import sub_patterns, white_space_remover, repeat_non_word_remover, recover_upper_cui
@@ -37,9 +34,9 @@ if __name__ == '__main__':
 
     # File paths
     data_path = "/home/luoz3/wsd_data"
-    dataset_path = data_path + "/upmc/example"
-    dataset_processed_path = data_path + "/upmc/example/processed"
-    os.makedirs(dataset_processed_path, exist_ok=True)
+    # dataset_path = data_path + "/upmc/example"
+    # dataset_processed_path = data_path + "/upmc/example/processed"
+    # os.makedirs(dataset_processed_path, exist_ok=True)
 
     # # fix annotation error
     # with open(dataset_path + "/training_data.txt") as input, open(dataset_path + "/training_data_fixed.txt", "w") as output:
@@ -51,7 +48,7 @@ if __name__ == '__main__':
     # Process DataSet documents (only one word abbrs)
     #############################
 
-    dataset_txt_annotated = txt_reader(dataset_path + "/training_data_fixed.txt")
+    # dataset_txt_annotated = txt_reader(dataset_path + "/training_data_fixed.txt")
 
     # Initialize processor and tokenizer
     processor = TextProcessor([
@@ -65,13 +62,46 @@ if __name__ == '__main__':
         repeat_non_word_remover,
         recover_upper_cui])
 
+    # # pre-processing
+    # dataset_txt = processor.process_texts(dataset_txt_annotated, n_jobs=30)
+    # # tokenizing
+    # dataset_txt_tokenized = toknizer.process_texts(dataset_txt, n_jobs=30)
+    # # Filter trivial tokens and Remove repeat non-words
+    # dataset_txt_filtered = filter_processor.process_texts(dataset_txt_tokenized, n_jobs=30)
+    # # Write to file
+    # txt_writer(dataset_txt_filtered, dataset_processed_path+"/upmc_example_processed.txt")
+
+
+
+    ######################################
+    # Processing UPMC AB
+    ######################################
+
+    upmc_ab_path = data_path + "/upmc/AB"
+    upmc_ab_processed_path = upmc_ab_path + "/processed"
+    os.makedirs(upmc_ab_processed_path, exist_ok=True)
+
+    upmc_ab_txt_annotated = txt_reader(upmc_ab_path + "/training_data_AB.txt")
     # pre-processing
-    dataset_txt = processor.process_texts(dataset_txt_annotated, n_jobs=30)
+    upmc_ab_txt = processor.process_texts(upmc_ab_txt_annotated, n_jobs=30)
     # tokenizing
-    dataset_txt_tokenized = toknizer.process_texts(dataset_txt, n_jobs=30)
+    upmc_ab_txt_tokenized = toknizer.process_texts(upmc_ab_txt, n_jobs=30)
     # Filter trivial tokens and Remove repeat non-words
-    dataset_txt_filtered = filter_processor.process_texts(dataset_txt_tokenized, n_jobs=30)
+    upmc_ab_txt_filtered = filter_processor.process_texts(upmc_ab_txt_tokenized, n_jobs=30)
+
+    # train/test split (80% train)
+    random.shuffle(upmc_ab_txt_filtered)
+    num_instances = len(upmc_ab_txt_filtered)
+    train_idx = random.sample(range(num_instances), int(0.8*num_instances))
+    upmc_ab_train_txt = []
+    upmc_ab_test_txt = []
+    for idx, txt in enumerate(upmc_ab_txt_filtered):
+        if idx in train_idx:
+            upmc_ab_train_txt.append(txt)
+        else:
+            upmc_ab_test_txt.append(txt)
     # Write to file
-    txt_writer(dataset_txt_filtered, dataset_processed_path+"/upmc_example_processed.txt")
+    txt_writer(upmc_ab_train_txt, upmc_ab_processed_path+"/upmc_ab_train.txt")
+    txt_writer(upmc_ab_test_txt, upmc_ab_processed_path + "/upmc_ab_test.txt")
 
     print()
