@@ -50,6 +50,10 @@ class DataSetPaths:
         self.upmc_ab_test_folder = get_path('../wsd_data/upmc/AB/processed/test/', env=environment)
         self.upmc_all_no_mark_folder = get_path('../wsd_data/upmc/batch1_4/processed/', env=environment)
 
+        # path to sense inventory
+        self.sense_inventory_json = get_path('../wsd_data/sense_inventory/final_cleaned_sense_inventory_with_testsets.json', env=environment)
+        self.sense_inventory_pkl = get_path('../wsd_data/sense_inventory/final_cleaned_sense_inventory_with_testsets.pkl', env=environment)
+
 
 def process_abbr_token(token):
     """
@@ -357,8 +361,8 @@ if __name__ == '__main__':
     upmc_ab_train_counter = pickle_reader(dataset_paths.upmc_ab_train_folder + "/train_abbr_counter.pkl")
 
     # # summary of training set
-    # print("Summary of MIMIC train:")
-    # dataset_summary(mimic_train_counter)
+    print("Summary of MIMIC train:")
+    dataset_summary(mimic_train_counter)
 
     print("Summary of UPMC AB train:")
     dataset_summary(upmc_ab_train_counter)
