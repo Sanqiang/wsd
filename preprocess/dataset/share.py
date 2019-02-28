@@ -10,7 +10,7 @@ from collections import defaultdict
 from preprocess.text_helper import white_space_remover, repeat_non_word_remover, recover_upper_cui, is_valid_abbr
 from preprocess.text_helper import TextProcessor, CoreNLPTokenizer, TextTokenFilter
 from preprocess.file_helper import txt_writer, json_writer, json_reader
-from preprocess.dataset.mimic import sub_deid_patterns_mimic
+from preprocess.dataset.mimic_preprocess import sub_deid_patterns_mimic
 
 
 toknizer = CoreNLPTokenizer()
