@@ -291,7 +291,7 @@ if __name__ == '__main__':
         example_note = "".join(file.readlines())
 
     wsd = AbbrDisambiguation(
-        train_processed_path=dataset_paths.mimic_train_folder,
+        train_processed_path=dataset_paths.upmc_ab_train_folder,
         abbr_inventory_path=abbr_inventory_path,
         use_pretrain=True,
         use_softmax=True)
