@@ -38,6 +38,8 @@ class DataSetPaths:
         self.upmc_ab_train_txt = get_path('../wsd_data/upmc/AB/processed/upmc_ab_train.txt', env=environment)
         self.upmc_ab_test_txt = get_path('../wsd_data/upmc/AB/processed/upmc_ab_test.txt', env=environment)
         self.upmc_all_no_mark_txt = get_path('../wsd_data/upmc/batch1_4/processed/train_no_mark.txt', env=environment)
+        self.upmc_ad_train_txt = get_path('../wsd_data/upmc/AD/processed/upmc_train.txt', env=environment)
+        self.upmc_ad_test_txt = get_path('../wsd_data/upmc/AD/processed/upmc_test.txt', env=environment)
 
         # paths for processed files
         self.mimic_train_folder = get_path('../wsd_data/mimic/processed/train/', env=environment)
@@ -48,6 +50,8 @@ class DataSetPaths:
         self.upmc_example_folder = get_path('../wsd_data/upmc/example/processed/test/', env=environment)
         self.upmc_ab_train_folder = get_path('../wsd_data/upmc/AB/processed/train/', env=environment)
         self.upmc_ab_test_folder = get_path('../wsd_data/upmc/AB/processed/test/', env=environment)
+        self.upmc_ad_train_folder = get_path('../wsd_data/upmc/AD/processed/train/', env=environment)
+        self.upmc_ad_test_folder = get_path('../wsd_data/upmc/AD/processed/test/', env=environment)
         self.upmc_all_no_mark_folder = get_path('../wsd_data/upmc/batch1_4/processed/', env=environment)
 
         # path to sense inventory
@@ -271,7 +275,7 @@ def save_instance_collection_to_json(instance_collection: list, json_path: str):
             file.write(json.dumps(instance._asdict())+'\n')
 
 
-def evaluation(instance_collection_true: list, instance_collection_pred: list, num_limited_samples=1000):
+def evaluation(instance_collection_true: list, instance_collection_pred: list, num_limited_samples=100):
     """
     Evaluate accuracy based on instance collections.
 

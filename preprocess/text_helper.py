@@ -252,7 +252,7 @@ class CoreNLPTokenizer(TextBaseHelper):
             texts_split_list.extend(multi_doc[1].split(self.combine_splitter))
         return texts_split_list
 
-    def _job(self, idxs, docs, content_queue, debug=False):
+    def _job(self, idxs, docs, content_queue, debug=False, debug_path="/home/luoz3/wsd_data/upmc/"):
         for idx, doc in zip(idxs, docs):
             if debug:
                 try:
@@ -262,7 +262,7 @@ class CoreNLPTokenizer(TextBaseHelper):
                     })['tokens']
                     content = []
                 except TypeError:
-                    with open("%d-error.txt" % idx, "w") as file:
+                    with open(debug_path + "%d-error.txt" % idx, "w") as file:
                         file.write(doc)
             else:
                 tokens = self.stanford_nlp.annotate(doc, properties={

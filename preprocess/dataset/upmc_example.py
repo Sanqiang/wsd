@@ -26,6 +26,27 @@ def replace(token: str):
         return token
 
 
+def process_annotated_data(txt_preprocessed_path, upmc_processed_path, train_ratio=0.8, n_jobs=30):
+    os.makedirs(upmc_processed_path, exist_ok=True)
+    upmc_txt_annotated = txt_reader(txt_preprocessed_path)
+    # pre-processing
+    upmc_txt = all_processor.process_texts(upmc_txt_annotated, n_jobs=n_jobs)
+    # train/test split (80% train)
+    random.shuffle(upmc_txt)
+    num_instances = len(upmc_txt)
+    train_idx = set(random.sample(range(num_instances), int(train_ratio*num_instances)))
+    upmc_train_txt = []
+    upmc_test_txt = []
+    for idx, txt in enumerate(tqdm.tqdm(upmc_txt)):
+        if idx in train_idx:
+            upmc_train_txt.append(txt)
+        else:
+            upmc_test_txt.append(txt)
+    # Write to file
+    txt_writer(upmc_train_txt, upmc_processed_path+"/upmc_train.txt")
+    txt_writer(upmc_test_txt, upmc_processed_path+"/upmc_test.txt")
+
+
 if __name__ == '__main__':
 
     ######################################
@@ -62,6 +83,12 @@ if __name__ == '__main__':
         repeat_non_word_remover,
         recover_upper_cui])
 
+    all_processor = TextProcessor([
+        white_space_remover,
+        token_filter,
+        repeat_non_word_remover,
+        recover_upper_cui])
+
     # # pre-processing
     # dataset_txt = processor.process_texts(dataset_txt_annotated, n_jobs=30)
     # # tokenizing
@@ -72,36 +99,42 @@ if __name__ == '__main__':
     # txt_writer(dataset_txt_filtered, dataset_processed_path+"/upmc_example_processed.txt")
 
 
+    # ######################################
+    # # Processing UPMC AB
+    # ######################################
+    #
+    # upmc_ab_path = data_path + "/upmc/AB"
+    # upmc_ab_processed_path = upmc_ab_path + "/processed"
+    # os.makedirs(upmc_ab_processed_path, exist_ok=True)
+    #
+    # upmc_ab_txt_annotated = txt_reader(upmc_ab_path + "/training_data_AB.txt")
+    # # pre-processing
+    # upmc_ab_txt = processor.process_texts(upmc_ab_txt_annotated, n_jobs=30)
+    # # tokenizing
+    # upmc_ab_txt_tokenized = toknizer.process_texts(upmc_ab_txt, n_jobs=30)
+    # # Filter trivial tokens and Remove repeat non-words
+    # upmc_ab_txt_filtered = filter_processor.process_texts(upmc_ab_txt_tokenized, n_jobs=30)
+    #
+    # # train/test split (80% train)
+    # random.shuffle(upmc_ab_txt_filtered)
+    # num_instances = len(upmc_ab_txt_filtered)
+    # train_idx = random.sample(range(num_instances), int(0.8*num_instances))
+    # upmc_ab_train_txt = []
+    # upmc_ab_test_txt = []
+    # for idx, txt in enumerate(upmc_ab_txt_filtered):
+    #     if idx in train_idx:
+    #         upmc_ab_train_txt.append(txt)
+    #     else:
+    #         upmc_ab_test_txt.append(txt)
+    # # Write to file
+    # txt_writer(upmc_ab_train_txt, upmc_ab_processed_path+"/upmc_ab_train.txt")
+    # txt_writer(upmc_ab_test_txt, upmc_ab_processed_path + "/upmc_ab_test.txt")
+
 
     ######################################
-    # Processing UPMC AB
+    # Processing UPMC AD
     ######################################
 
-    upmc_ab_path = data_path + "/upmc/AB"
-    upmc_ab_processed_path = upmc_ab_path + "/processed"
-    os.makedirs(upmc_ab_processed_path, exist_ok=True)
-
-    upmc_ab_txt_annotated = txt_reader(upmc_ab_path + "/training_data_AB.txt")
-    # pre-processing
-    upmc_ab_txt = processor.process_texts(upmc_ab_txt_annotated, n_jobs=30)
-    # tokenizing
-    upmc_ab_txt_tokenized = toknizer.process_texts(upmc_ab_txt, n_jobs=30)
-    # Filter trivial tokens and Remove repeat non-words
-    upmc_ab_txt_filtered = filter_processor.process_texts(upmc_ab_txt_tokenized, n_jobs=30)
-
-    # train/test split (80% train)
-    random.shuffle(upmc_ab_txt_filtered)
-    num_instances = len(upmc_ab_txt_filtered)
-    train_idx = random.sample(range(num_instances), int(0.8*num_instances))
-    upmc_ab_train_txt = []
-    upmc_ab_test_txt = []
-    for idx, txt in enumerate(upmc_ab_txt_filtered):
-        if idx in train_idx:
-            upmc_ab_train_txt.append(txt)
-        else:
-            upmc_ab_test_txt.append(txt)
-    # Write to file
-    txt_writer(upmc_ab_train_txt, upmc_ab_processed_path+"/upmc_ab_train.txt")
-    txt_writer(upmc_ab_test_txt, upmc_ab_processed_path + "/upmc_ab_test.txt")
+    process_annotated_data("/home/wangz12/scripts/generate_trainning_data/training_data_AD.txt", data_path + "/upmc/AD/processed")
 
     print()

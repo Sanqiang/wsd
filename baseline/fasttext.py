@@ -415,7 +415,7 @@ if __name__ == '__main__':
     train_evaluate_fasttext_on_datasets(
         dataset_paths,
         only_test=True,
-        use_single_model=False,
-        use_pretrain=False,
+        use_single_model=True,
+        use_pretrain=True,
         use_softmax=True
     )
