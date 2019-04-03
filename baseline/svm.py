@@ -233,7 +233,8 @@ if __name__ == '__main__':
     # svm_cross_validation(dataset_paths.mimic_train_folder, abbr_idx=40)
 
     # train_svm(dataset_paths.mimic_train_folder)
-    train_svm(dataset_paths.upmc_ab_train_folder)
+    # train_svm(dataset_paths.upmc_ab_train_folder)
+    # train_svm(dataset_paths.upmc_ad_train_folder)
 
     # #####################################
     # # testing (directly compute score, not using standard pipeline)
@@ -256,6 +257,7 @@ if __name__ == '__main__':
     # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
     upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
+    # upmc_ad_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ad_test_txt)
 
     # print("SVM on MIMIC test: ")
     # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
@@ -287,3 +289,8 @@ if __name__ == '__main__':
     upmc_ab_test_collection_true = upmc_ab_test_collector.generate_instance_collection()
     upmc_ab_test_collection_pred = predict_svm(dataset_paths.upmc_ab_test_folder, dataset_paths.upmc_ab_train_folder)
     print(evaluation(upmc_ab_test_collection_true, upmc_ab_test_collection_pred))
+
+    # print("SVM on UPMC AD test: ")
+    # upmc_ad_test_collection_true = upmc_ad_test_collector.generate_instance_collection()
+    # upmc_ad_test_collection_pred = predict_svm(dataset_paths.upmc_ad_test_folder, dataset_paths.upmc_ad_train_folder)
+    # print(evaluation(upmc_ad_test_collection_true, upmc_ad_test_collection_pred))

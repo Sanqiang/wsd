@@ -68,10 +68,13 @@ if __name__ == '__main__':
 
     # mimic_train_counter = pickle_reader(train_counter_path)
 
-    upmc_ab_train_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_train_txt)
-    upmc_ab_train_counter = upmc_ab_train_collector.generate_counter(dataset_paths.upmc_ab_train_folder+"/train_abbr_counter.pkl")
+    # upmc_ab_train_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_train_txt)
+    # upmc_ab_train_counter = upmc_ab_train_collector.generate_counter(dataset_paths.upmc_ab_train_folder+"/train_abbr_counter.pkl")
 
     # upmc_ab_train_counter = pickle_reader(dataset_paths.upmc_ab_train_folder+"/train_abbr_counter.pkl")
+
+    upmc_ad_train_collector = AbbrInstanceCollector(dataset_paths.upmc_ad_train_txt)
+    upmc_ad_train_counter = upmc_ad_train_collector.generate_counter(dataset_paths.upmc_ad_train_folder+"/train_abbr_counter.pkl")
 
     #####################################
     # testing (directly compute score, not using standard pipeline)
@@ -93,7 +96,8 @@ if __name__ == '__main__':
     # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
     # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
-    upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
+    # upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
+    upmc_ad_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ad_test_txt)
 
     # print("Mvote on MIMIC test: ")
     # mimic_test_collection_true = mimic_test_collector.generate_instance_collection()
@@ -121,7 +125,12 @@ if __name__ == '__main__':
     # print(evaluation(upmc_example_collection_true, upmc_example_collection_pred))
     # save_instance_collection_to_json(upmc_example_collection_pred, dataset_paths.upmc_example_folder+"/upmc_mvote_pred.json")
 
-    print("Mvote on UPMC AB test: ")
-    upmc_ab_test_collection_true = upmc_ab_test_collector.generate_instance_collection()
-    upmc_ab_test_collection_pred = predict_majority_vote(upmc_ab_train_counter, dataset_paths.upmc_ab_test_txt)
-    print(evaluation(upmc_ab_test_collection_true, upmc_ab_test_collection_pred))
+    # print("Mvote on UPMC AB test: ")
+    # upmc_ab_test_collection_true = upmc_ab_test_collector.generate_instance_collection()
+    # upmc_ab_test_collection_pred = predict_majority_vote(upmc_ab_train_counter, dataset_paths.upmc_ab_test_txt)
+    # print(evaluation(upmc_ab_test_collection_true, upmc_ab_test_collection_pred))
+
+    print("Mvote on UPMC AD test: ")
+    upmc_ad_test_collection_true = upmc_ad_test_collector.generate_instance_collection()
+    upmc_ad_test_collection_pred = predict_majority_vote(upmc_ad_train_counter, dataset_paths.upmc_ad_test_txt)
+    print(evaluation(upmc_ad_test_collection_true, upmc_ad_test_collection_pred))

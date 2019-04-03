@@ -353,23 +353,29 @@ def evaluation(instance_collection_true: list, instance_collection_pred: list, n
 
 if __name__ == '__main__':
     dataset_paths = DataSetPaths('luoz3_x1')
-    train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
+    # train_counter_path = dataset_paths.mimic_train_folder+'train_abbr_counter.pkl'
 
     # # build train collectors
     # mimic_train_collector = AbbrInstanceCollector(dataset_paths.mimic_train_txt)
     # mimic_train_counter = mimic_train_collector.generate_counter(train_counter_path)
 
+    upmc_ad_train_collector = AbbrInstanceCollector(dataset_paths.upmc_ad_train_txt)
+    upmc_ad_train_counter = upmc_ad_train_collector.generate_counter()
+
     # # read train counter from file
-    mimic_train_counter = pickle_reader(train_counter_path)
+    # mimic_train_counter = pickle_reader(train_counter_path)
     # generate_sense_inventory_json_by_counter(mimic_train_counter, dataset_paths.mimic_train_folder+'mimic_train_inventory.json')
-    upmc_ab_train_counter = pickle_reader(dataset_paths.upmc_ab_train_folder + "/train_abbr_counter.pkl")
+    # upmc_ab_train_counter = pickle_reader(dataset_paths.upmc_ab_train_folder + "/train_abbr_counter.pkl")
 
     # # summary of training set
-    print("Summary of MIMIC train:")
-    dataset_summary(mimic_train_counter)
+    # print("Summary of MIMIC train:")
+    # dataset_summary(mimic_train_counter)
 
-    print("Summary of UPMC AB train:")
-    dataset_summary(upmc_ab_train_counter)
+    # print("Summary of UPMC AB train:")
+    # dataset_summary(upmc_ab_train_counter)
+
+    # print("Summary of UPMC AD train:")
+    # dataset_summary(upmc_ad_train_counter)
 
     # build test collectors
     # mimic_test_collector = AbbrInstanceCollector(dataset_paths.mimic_eval_txt)
@@ -377,7 +383,8 @@ if __name__ == '__main__':
     # msh_collector = AbbrInstanceCollector(dataset_paths.msh_txt)
     # umn_collector = AbbrInstanceCollector(dataset_paths.umn_txt)
     # upmc_example_collector = AbbrInstanceCollector(dataset_paths.upmc_example_txt)
-    upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
+    # upmc_ab_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ab_test_txt)
+    upmc_ad_test_collector = AbbrInstanceCollector(dataset_paths.upmc_ad_test_txt)
 
     # generate test counters
     # mimic_test_counter = mimic_test_collector.generate_counter()
@@ -385,7 +392,8 @@ if __name__ == '__main__':
     # msh_counter = msh_collector.generate_counter()
     # umn_counter = umn_collector.generate_counter()
     # upmc_example_counter = upmc_example_collector.generate_counter()
-    upmc_ab_test_counter = upmc_ab_test_collector.generate_counter()
+    # upmc_ab_test_counter = upmc_ab_test_collector.generate_counter()
+    upmc_ad_test_counter = upmc_ad_test_collector.generate_counter()
 
     # # generate sense inventories
     # generate_sense_inventory_json_by_counter(mimic_test_counter, dataset_paths.mimic_test_folder + 'mimic_test_inventory.json')
@@ -393,6 +401,8 @@ if __name__ == '__main__':
     # generate_sense_inventory_json_by_counter(msh_counter, dataset_paths.msh_test_folder + 'msh_inventory.json')
     # generate_sense_inventory_json_by_counter(umn_counter, dataset_paths.umn_test_folder + 'umn_inventory.json')
     # generate_sense_inventory_json_by_counter(upmc_example_counter, dataset_paths.upmc_example_folder + 'upmc_example_inventory.json')
+    generate_sense_inventory_json_by_counter(upmc_ad_train_counter, dataset_paths.upmc_ad_train_folder+"upmc_ad_train_inventory.json")
+    generate_sense_inventory_json_by_counter(upmc_ad_test_counter, dataset_paths.upmc_ad_test_folder+"upmc_ad_test_inventory.json")
 
     # # compare dataset intersections
     # print("Intersection on MIMIC test: ")
@@ -405,12 +415,14 @@ if __name__ == '__main__':
     # compare_dataset_summary(mimic_train_counter, umn_counter)
     # print("Intersection on upmc example: ")
     # compare_dataset_summary(mimic_train_counter, upmc_example_counter)
-    print("Intersection on UPMC AB train: ")
-    compare_dataset_summary(mimic_train_counter, upmc_ab_train_counter)
-    print("Intersection on UPMC AB test: ")
-    compare_dataset_summary(mimic_train_counter, upmc_ab_test_counter)
-    print("Intersection on UPMC AB test (UPMC AB train): ")
-    compare_dataset_summary(upmc_ab_train_counter, upmc_ab_test_counter)
+    # print("Intersection on UPMC AB train: ")
+    # compare_dataset_summary(mimic_train_counter, upmc_ab_train_counter)
+    # print("Intersection on UPMC AB test: ")
+    # compare_dataset_summary(mimic_train_counter, upmc_ab_test_counter)
+    # print("Intersection on UPMC AB test (UPMC AB train): ")
+    # compare_dataset_summary(upmc_ab_train_counter, upmc_ab_test_counter)
+    # print("Intersection on UPMC AD test (UPMC AD train): ")
+    # compare_dataset_summary(upmc_ad_train_counter, upmc_ad_test_counter)
 
     # # compare mapping instances
     # print("Compare instances on MIMIC test:")
@@ -423,12 +435,14 @@ if __name__ == '__main__':
     # print(compare_dataset_instances(mimic_train_counter, umn_counter))
     # print("Compare instances on UPMC example:")
     # print(compare_dataset_instances(mimic_train_counter, upmc_example_counter))
-    print("Compare instances on UPMC AB train:")
-    print(compare_dataset_instances(mimic_train_counter, upmc_ab_train_counter))
-    print("Compare instances on UPMC AB test:")
-    print(compare_dataset_instances(mimic_train_counter, upmc_ab_test_counter))
-    print("Compare instances on UPMC AB test (UPMC AB train):")
-    print(compare_dataset_instances(upmc_ab_train_counter, upmc_ab_test_counter))
+    # print("Compare instances on UPMC AB train:")
+    # print(compare_dataset_instances(mimic_train_counter, upmc_ab_train_counter))
+    # print("Compare instances on UPMC AB test:")
+    # print(compare_dataset_instances(mimic_train_counter, upmc_ab_test_counter))
+    # print("Compare instances on UPMC AB test (UPMC AB train):")
+    # print(compare_dataset_instances(upmc_ab_train_counter, upmc_ab_test_counter))
+    # print("Compare instances on UPMC AD test (UPMC AD train):")
+    # print(compare_dataset_instances(upmc_ad_train_counter, upmc_ad_test_counter))
 
     # upmc_overlap = overlap_analysis(mimic_train_counter, upmc_example_counter)
     # json_writer(upmc_overlap, dataset_paths.upmc_example_folder+"/upmc_overlap.json")

@@ -330,7 +330,8 @@ def predict_fasttext_classifier_multi_model(train_processed_path, test_processed
 def train_evaluate_fasttext_on_datasets(dataset_paths, only_test=True, use_single_model=True, use_pretrain=False, use_softmax=False):
     # train
     # train_dataset = ("MIMIC Train", dataset_paths.mimic_train_folder)
-    train_dataset = ("UPMC AB Train", dataset_paths.upmc_ab_train_folder)
+    # train_dataset = ("UPMC AB Train", dataset_paths.upmc_ab_train_folder)
+    train_dataset = ("UPMC AD Train", dataset_paths.upmc_ad_train_folder)
 
     if not only_test:
         print("Train fastText on {}:".format(train_dataset[0]))
@@ -344,7 +345,8 @@ def train_evaluate_fasttext_on_datasets(dataset_paths, only_test=True, use_singl
         # ("ShARe/CLEF", dataset_paths.share_txt, dataset_paths.share_test_folder),
         # ("MSH", dataset_paths.msh_txt, dataset_paths.msh_test_folder),
         # ("UPMC example", dataset_paths.upmc_example_txt, dataset_paths.upmc_example_folder),
-        ("UPMC AB test", dataset_paths.upmc_ab_test_txt, dataset_paths.upmc_ab_test_folder),
+        # ("UPMC AB test", dataset_paths.upmc_ab_test_txt, dataset_paths.upmc_ab_test_folder),
+        ("UPMC AD test", dataset_paths.upmc_ad_test_txt, dataset_paths.upmc_ad_test_folder),
     ]
     for name, txt_path, test_folder in datasets:
         print("Test fastText on {}: ".format(name))
@@ -366,12 +368,14 @@ if __name__ == '__main__':
 
     # generate_train_data(dataset_paths.mimic_train_folder)
     # generate_train_data(dataset_paths.upmc_ab_train_folder)
+    # generate_train_data(dataset_paths.upmc_ad_train_folder)
 
     # generate_test_data(dataset_paths.mimic_test_folder)
     # generate_test_data(dataset_paths.share_test_folder)
     # generate_test_data(dataset_paths.upmc_example_folder)
     # generate_test_data(dataset_paths.msh_test_folder)
     # generate_test_data(dataset_paths.upmc_ab_test_folder)
+    # generate_test_data(dataset_paths.upmc_ad_test_folder)
 
     # generate_whole_dataset(dataset_paths.mimic_train_folder, shuffle=True)
     # generate_whole_dataset(dataset_paths.mimic_test_folder)
@@ -380,6 +384,7 @@ if __name__ == '__main__':
     # generate_whole_dataset(dataset_paths.upmc_example_folder)
     # generate_whole_dataset(dataset_paths.upmc_ab_train_folder, shuffle=True)
     # generate_whole_dataset(dataset_paths.upmc_ab_test_folder)
+    # generate_whole_dataset(dataset_paths.upmc_ad_train_folder, shuffle=True)
 
     #####################################
     # train word embedding
@@ -396,17 +401,17 @@ if __name__ == '__main__':
     #     dataset_paths.upmc_ab_train_folder+'/fasttext.vec'
     # )
 
-    # #####################################
-    # # train & test (single model)
-    # #####################################
+    #####################################
+    # train & test (single model)
+    #####################################
 
-    # train_evaluate_fasttext_on_datasets(
-    #     dataset_paths,
-    #     only_test=False,
-    #     use_single_model=True,
-    #     use_pretrain=True,
-    #     use_softmax=True
-    # )
+    train_evaluate_fasttext_on_datasets(
+        dataset_paths,
+        only_test=False,
+        use_single_model=True,
+        use_pretrain=True,
+        use_softmax=True
+    )
 
     #####################################
     # train & test (multiple model)
@@ -414,8 +419,8 @@ if __name__ == '__main__':
 
     train_evaluate_fasttext_on_datasets(
         dataset_paths,
-        only_test=True,
-        use_single_model=True,
+        only_test=False,
+        use_single_model=False,
         use_pretrain=True,
         use_softmax=True
     )
